@@ -8,6 +8,7 @@ from app.handlers.base_handler import BaseHandler
 from app.services.part_service import PartService
 from app.services.project_service import ProjectService
 from app.keyboards.main_keyboard import get_main_keyboard
+from app.models.project import ProjectStatus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,6 @@ PART_NAME, PART_QUANTITY, PART_PURCHASE, PART_SELLING = range(4)
 class PartHandler(BaseHandler):
     """Handler for part operations."""
     
-    # Expose states for main.py
     PART_NAME = PART_NAME
     PART_QUANTITY = PART_QUANTITY
     PART_PURCHASE = PART_PURCHASE
@@ -27,11 +27,54 @@ class PartHandler(BaseHandler):
     @staticmethod
     async def show_parts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show parts for a project."""
-        query = update.callback_query
-        if query:
-            project_id = int(query.data.split('_')[1])
-            context.user_data['current_project_id'] = project_id
-            await query.answer()
+        # Check if called from main menu or callback
+        if update.callback_query:
+            query = update.callback_query
+            data = query.data
+            if data.startswith("parts_"):
+                project_id = int(data.split('_')[1])
+                context.user_data['current_project_id'] = project_id
+                await query.answer()
+            else:
+                await query.answer()
+                return
+        
+        # If no project_id in context, show list of projects
+        if not context.user_data.get('current_project_id'):
+            db = BaseHandler.get_db()
+            try:
+                projects = ProjectService.get_all(db)
+                if not projects:
+                    await BaseHandler.send_message(
+                        update, context,
+                        "🔩 <b>قطعات</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "لطفاً ابتدا یک پروژه ثبت کنید.",
+                        reply_markup=get_main_keyboard(),
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                text = "🔩 <b>انتخاب پروژه برای مدیریت قطعات</b>\n\n"
+                keyboard = []
+                for project in projects[:10]:
+                    status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                            callback_data=f"parts_{project.id}"
+                        )
+                    ])
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                
+                await BaseHandler.send_message(
+                    update, context,
+                    text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                return
+            finally:
+                db.close()
         
         db = BaseHandler.get_db()
         try:
@@ -53,7 +96,7 @@ class PartHandler(BaseHandler):
                     [InlineKeyboardButton("➕ ثبت قطعه جدید", callback_data=f"add_part_{project_id}")],
                     [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
                 ])
-                await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
+                await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
             text = f"🔩 <b>قطعات پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
@@ -69,7 +112,7 @@ class PartHandler(BaseHandler):
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
-            await BaseHandler.send_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+            await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         finally:
             db.close()
     
@@ -200,7 +243,6 @@ class PartHandler(BaseHandler):
         finally:
             db.close()
         
-        # Clear user data and end conversation
         context.user_data.clear()
         return ConversationHandler.END
     
