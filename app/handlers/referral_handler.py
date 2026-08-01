@@ -7,6 +7,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base_handler import BaseHandler
 from app.services.referral_service import ReferralService
 from app.services.project_service import ProjectService
+from app.services.part_service import PartService
+from app.services.expense_service import ExpenseService
+from app.services.payment_service import PaymentService
+from app.domain.services.calculator_service import CalculatorService
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 import json
@@ -49,18 +53,48 @@ class ReferralHandler(BaseHandler):
     @staticmethod
     async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show referral for a project."""
-        query = update.callback_query
-        if query:
+        # Check if called from main menu or callback
+        if update.callback_query:
+            query = update.callback_query
             project_id = int(query.data.split('_')[1])
             context.user_data['referral_project_id'] = project_id
             await query.answer()
         else:
-            await BaseHandler.send_message(
-                update, context,
-                "🤝 لطفاً ابتدا یک پروژه را انتخاب کنید.",
-                reply_markup=get_main_keyboard()
-            )
-            return
+            # Called from main menu - show list of projects
+            db = BaseHandler.get_db()
+            try:
+                projects = ProjectService.get_all(db)
+                if not projects:
+                    await BaseHandler.send_message(
+                        update, context,
+                        "🤝 <b>حق معرفی</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "لطفاً ابتدا یک پروژه ثبت کنید.",
+                        reply_markup=get_main_keyboard(),
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                text = "🤝 <b>انتخاب پروژه برای ثبت حق معرفی</b>\n\n"
+                keyboard = []
+                for project in projects[:10]:
+                    status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                            callback_data=f"referral_{project.id}"
+                        )
+                    ])
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                
+                await BaseHandler.send_message(
+                    update, context,
+                    text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                return
+            finally:
+                db.close()
         
         db = BaseHandler.get_db()
         try:
@@ -71,6 +105,22 @@ class ReferralHandler(BaseHandler):
             if not project:
                 await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
                 return
+            
+            # Get financial data for calculations
+            parts = PartService.get_by_project(db, project_id)
+            expenses = ExpenseService.get_by_project(db, project_id)
+            payments = PaymentService.get_by_project(db, project_id)
+            total_payments = sum(p.amount for p in payments)
+            
+            # Calculate financials
+            financials = CalculatorService.calculate_project_financials(
+                total_amount_from_customer=project.labor_cost,
+                parts=parts,
+                expenses=expenses,
+                referral_percentage=referral.percentage if referral else 0,
+                referral_name=referral.referrer_name if referral else "",
+                total_payments=total_payments
+            )
             
             if not referral:
                 # Show quick referral buttons
@@ -93,19 +143,27 @@ class ReferralHandler(BaseHandler):
                 await BaseHandler.edit_message(
                     update, context,
                     f"🤝 <b>حق معرفی پروژه</b>\n\n"
-                    f"👤 مشتری: {project.customer.name}\n\n"
+                    f"👤 مشتری: {project.customer.name}\n"
+                    f"💰 مبلغ کل پروژه: {project.labor_cost:,.0f} تومان\n\n"
                     "لطفاً معرفی‌کننده را انتخاب کنید:",
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode='HTML'
                 )
                 return
             
+            # Show referral details with amounts
             text = (
                 f"🤝 <b>اطلاعات حق معرفی</b>\n\n"
                 f"👤 مشتری: {project.customer.name}\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
-                f"💰 مبلغ: {referral.amount:,.0f} تومان"
+                f"💰 سود خالص پروژه: {financials.net_profit:,.0f} تومان\n"
+                f"💵 مبلغ حق معرفی: {referral.amount:,.0f} تومان\n"
+                f"💰 سود پس از کسر حق معرفی: {financials.net_profit - referral.amount:,.0f} تومان\n\n"
+                f"📊 <b>تقسیم سود</b>:\n"
+                f"👤 سهم من: {financials.my_share:,.0f} تومان\n"
+                f"👥 سهم شریک: {financials.partner_share:,.0f} تومان\n"
+                f"🤝 مبلغ قابل پرداخت به معرفی‌کننده: {referral.amount:,.0f} تومان"
             )
             
             keyboard = [
@@ -130,7 +188,6 @@ class ReferralHandler(BaseHandler):
         """Quick add referral from button."""
         query = update.callback_query
         data = query.data.split('_')
-        # data: ref_quick_Name_25
         name = data[2]
         percentage = int(data[3])
         
@@ -155,12 +212,32 @@ class ReferralHandler(BaseHandler):
                 percentage=percentage
             )
             
+            # Get financial data
+            project = ProjectService.get_by_id(db, project_id)
+            parts = PartService.get_by_project(db, project_id)
+            expenses = ExpenseService.get_by_project(db, project_id)
+            payments = PaymentService.get_by_project(db, project_id)
+            total_payments = sum(p.amount for p in payments)
+            
+            financials = CalculatorService.calculate_project_financials(
+                total_amount_from_customer=project.labor_cost,
+                parts=parts,
+                expenses=expenses,
+                referral_percentage=percentage,
+                referral_name=name,
+                total_payments=total_payments
+            )
+            
             text = (
                 f"✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
-                f"💰 مبلغ: {referral.amount:,.0f} تومان\n\n"
-                "💡 مبلغ حق معرفی پس از تکمیل پروژه محاسبه می‌شود."
+                f"💰 سود خالص: {financials.net_profit:,.0f} تومان\n"
+                f"💵 مبلغ حق معرفی: {financials.referral_amount:,.0f} تومان\n\n"
+                f"📊 <b>تقسیم سود نهایی</b>:\n"
+                f"👤 سهم من: {financials.my_share:,.0f} تومان\n"
+                f"👥 سهم شریک: {financials.partner_share:,.0f} تومان\n\n"
+                f"🤝 مبلغ قابل پرداخت به {name}: {financials.referral_amount:,.0f} تومان"
             )
             
             await BaseHandler.edit_message(
@@ -258,7 +335,6 @@ class ReferralHandler(BaseHandler):
         percentage = int(data.split('_')[2])
         context.user_data['referral_percentage'] = percentage
         
-        # Save referral
         await ReferralHandler.save_referral(update, context)
         return ConversationHandler.END
     
@@ -303,12 +379,32 @@ class ReferralHandler(BaseHandler):
                 referrers[name] = percentage
                 ReferralHandler.save_referrers(referrers)
             
+            # Get financial data
+            project = ProjectService.get_by_id(db, project_id)
+            parts = PartService.get_by_project(db, project_id)
+            expenses = ExpenseService.get_by_project(db, project_id)
+            payments = PaymentService.get_by_project(db, project_id)
+            total_payments = sum(p.amount for p in payments)
+            
+            financials = CalculatorService.calculate_project_financials(
+                total_amount_from_customer=project.labor_cost,
+                parts=parts,
+                expenses=expenses,
+                referral_percentage=percentage,
+                referral_name=name,
+                total_payments=total_payments
+            )
+            
             text = (
                 f"✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
-                f"💰 مبلغ: {referral.amount:,.0f} تومان\n\n"
-                "💡 مبلغ حق معرفی پس از تکمیل پروژه محاسبه می‌شود."
+                f"💰 سود خالص: {financials.net_profit:,.0f} تومان\n"
+                f"💵 مبلغ حق معرفی: {financials.referral_amount:,.0f} تومان\n\n"
+                f"📊 <b>تقسیم سود نهایی</b>:\n"
+                f"👤 سهم من: {financials.my_share:,.0f} تومان\n"
+                f"👥 سهم شریک: {financials.partner_share:,.0f} تومان\n\n"
+                f"🤝 مبلغ قابل پرداخت به {name}: {financials.referral_amount:,.0f} تومان"
             )
             
             if auto:
@@ -384,7 +480,6 @@ class ReferralHandler(BaseHandler):
         
         keyboard = [
             [InlineKeyboardButton("➕ افزودن معرفی‌کننده جدید", callback_data="add_referrer")],
-            [InlineKeyboardButton("🗑 حذف معرفی‌کننده", callback_data="remove_referrer")],
             [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data="back_to_referral")]
         ]
         
