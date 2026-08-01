@@ -14,61 +14,57 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(REMINDER_INTERVAL, REMINDER_DATE) = range(2)
+REMINDER_INTERVAL, REMINDER_DATE = range(2)
 
 class ReminderHandler(BaseHandler):
     """Handler for reminder operations."""
+    
+    # Expose states for main.py
+    REMINDER_INTERVAL = REMINDER_INTERVAL
+    REMINDER_DATE = REMINDER_DATE
     
     @staticmethod
     async def show_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show reminders for a project."""
         query = update.callback_query
-        project_id = int(query.data.split('_')[1])
-        context.user_data['reminder_project_id'] = project_id
+        if query:
+            project_id = int(query.data.split('_')[1])
+            context.user_data['reminder_project_id'] = project_id
+            await query.answer()
+        else:
+            await BaseHandler.send_message(
+                update, context,
+                "⏰ لطفاً ابتدا یک پروژه را انتخاب کنید.",
+                reply_markup=get_main_keyboard()
+            )
+            return
         
         db = BaseHandler.get_db()
         try:
+            project_id = context.user_data['reminder_project_id']
             reminders = ReminderService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
             
             if not reminders:
-                await query.answer()
-                await BaseHandler.edit_message(
-                    update, context,
-                    f"⏰ <b>یادآوری‌های پروژه</b>\n\n"
-                    f"👤 مشتری: {project.customer.name}\n"
-                    f"❌ هیچ یادآوری ثبت نشده است.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ ثبت یادآوری جدید", callback_data=f"add_reminder_{project_id}")],
-                        [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                    ]),
-                    parse_mode='HTML'
-                )
+                text = f"⏰ <b>یادآوری‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ یادآوری ثبت نشده است."
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ ثبت یادآوری جدید", callback_data=f"add_reminder_{project_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+                ])
+                await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
-            text = f"⏰ <b>یادآوری‌های پروژه</b>\n\n"
-            text += f"👤 مشتری: {project.customer.name}\n\n"
-            
+            text = f"⏰ <b>یادآوری‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             for reminder in reminders:
                 status = "✅ ارسال شده" if reminder.is_sent else "⏳ در انتظار"
-                text += (
-                    f"📅 {reminder.interval.value}\n"
-                    f"   تاریخ: {reminder.reminder_date.strftime('%Y-%m-%d %H:%M')}\n"
-                    f"   وضعیت: {status}\n\n"
-                )
+                text += f"📅 {reminder.interval.value}\n   تاریخ: {reminder.reminder_date.strftime('%Y-%m-%d %H:%M')}\n   وضعیت: {status}\n\n"
             
             keyboard = [
                 [InlineKeyboardButton("➕ ثبت یادآوری جدید", callback_data=f"add_reminder_{project_id}")],
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
-            await query.answer()
-            await BaseHandler.edit_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+            await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         finally:
             db.close()
     
@@ -90,8 +86,7 @@ class ReminderHandler(BaseHandler):
         await query.answer()
         await BaseHandler.edit_message(
             update, context,
-            "⏰ <b>ثبت یادآوری جدید</b>\n\n"
-            "لطفاً <b>بازه زمانی</b> یادآوری را انتخاب کنید:",
+            "⏰ <b>ثبت یادآوری جدید</b>\n\nلطفاً <b>بازه زمانی</b> یادآوری را انتخاب کنید:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
@@ -133,8 +128,7 @@ class ReminderHandler(BaseHandler):
             await query.answer()
             await BaseHandler.edit_message(
                 update, context,
-                f"⏰ <b>یادآوری {interval.value}</b>\n\n"
-                f"📅 تاریخ یادآوری: {reminder_date.strftime('%Y-%m-%d %H:%M')}\n\n"
+                f"⏰ <b>یادآوری {interval.value}</b>\n\n📅 تاریخ یادآوری: {reminder_date.strftime('%Y-%m-%d %H:%M')}\n\n"
                 "آیا از این تاریخ مطمئن هستید؟\n"
                 "برای تغییر تاریخ، عدد مورد نظر را وارد کنید (مثلاً 2024-12-31)\n"
                 "برای تایید، '.' را وارد کنید.",
@@ -157,8 +151,7 @@ class ReminderHandler(BaseHandler):
             except ValueError:
                 await BaseHandler.send_message(
                     update, context,
-                    "❌ تاریخ نامعتبر است. فرمت صحیح: YYYY-MM-DD\n"
-                    "مثال: 2024-12-31",
+                    "❌ تاریخ نامعتبر است. فرمت صحیح: YYYY-MM-DD\nمثال: 2024-12-31",
                     parse_mode='HTML'
                 )
                 return REMINDER_DATE
@@ -178,20 +171,16 @@ class ReminderHandler(BaseHandler):
             )
             
             text = (
-                "✅ <b>یادآوری با موفقیت ثبت شد!</b>\n\n"
+                f"✅ <b>یادآوری با موفقیت ثبت شد!</b>\n\n"
                 f"⏰ بازه: {reminder.interval.value}\n"
                 f"📅 تاریخ: {reminder.reminder_date.strftime('%Y-%m-%d %H:%M')}"
             )
             
-            await BaseHandler.send_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                ]),
-                parse_mode='HTML'
-            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+            ])
             
+            await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
             logger.info(f"New reminder added for project {project_id}")
             
         except Exception as e:
