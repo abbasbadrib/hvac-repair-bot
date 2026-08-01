@@ -12,10 +12,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(NAME, PHONE, ADDRESS, DESCRIPTION) = range(4)
+NAME, PHONE, ADDRESS, DESCRIPTION = range(4)
 
 class CustomerHandler(BaseHandler):
     """Handler for customer operations."""
+    
+    # Expose states for main.py
+    NAME = NAME
+    PHONE = PHONE
+    ADDRESS = ADDRESS
+    DESCRIPTION = DESCRIPTION
     
     @staticmethod
     async def show_customers(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,10 +94,10 @@ class CustomerHandler(BaseHandler):
     @staticmethod
     async def add_customer_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get customer name."""
-        context.user_data['customer_name'] = update.message.text
+        context.user_data['customer_name'] = update.message.text.strip()
         await BaseHandler.send_message(
             update, context,
-            "📞 لطفاً <b>شماره تلفن</b> مشتری را وارد کنید:",
+            "📞 لطفاً <b>شماره تلفن</b> مشتری را وارد کنید:\n(مثال: 09123456789)",
             parse_mode='HTML'
         )
         return PHONE
@@ -104,14 +110,14 @@ class CustomerHandler(BaseHandler):
         
         await BaseHandler.send_message(
             update, context,
-            "📍 لطفاً <b>آدرس</b> مشتری را وارد کنید (برای رد کردن '.' را وارد کنید):",
+            "📍 لطفاً <b>آدرس</b> مشتری را وارد کنید:\n(برای رد کردن '.' را وارد کنید)",
             parse_mode='HTML'
         )
         return ADDRESS
     
     @staticmethod
     async def add_customer_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get customer address."""
+        """Get customer address and save."""
         address = update.message.text.strip()
         if address == '.':
             address = None
@@ -127,7 +133,12 @@ class CustomerHandler(BaseHandler):
                 address=context.user_data.get('customer_address')
             )
             
-            text = f"✅ <b>مشتری با موفقیت ثبت شد!</b>\n\n👤 نام: {customer.name}\n📞 تلفن: {customer.phone}"
+            text = (
+                f"✅ <b>مشتری با موفقیت ثبت شد!</b>\n\n"
+                f"👤 نام: {customer.name}\n"
+                f"📞 تلفن: {customer.phone}\n"
+                f"📍 آدرس: {customer.address or 'ثبت نشده'}"
+            )
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ ثبت پروژه جدید", callback_data=f"add_project_{customer.id}")],
                 [InlineKeyboardButton("🔙 بازگشت به لیست مشتریان", callback_data="list_customers")]
@@ -135,6 +146,12 @@ class CustomerHandler(BaseHandler):
             
             await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
             logger.info(f"New customer added: {customer.name}")
+        except Exception as e:
+            logger.error(f"Error adding customer: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا در ثبت مشتری: {str(e)}"
+            )
         finally:
             db.close()
         
