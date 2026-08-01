@@ -458,3 +458,95 @@ class ProjectHandler(BaseHandler):
         )
         context.user_data.clear()
         return ConversationHandler.END
+
+    @staticmethod
+    async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        
+        db = BaseHandler.get_db()
+        try:
+            project = ProjectService.get_by_id(db, project_id)
+            if not project:
+                await query.answer("❌ پروژه یافت نشد", True)
+                return
+            
+            if ProjectService.delete(db, project_id):
+                await query.answer("✅ پروژه حذف شد")
+                await BaseHandler.edit_message(
+                    update, context,
+                    f"✅ پروژه '{project.customer.name} - {project.project_type.value}' با موفقیت حذف شد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} deleted")
+            else:
+                await query.answer("❌ خطا در حذف پروژه", True)
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        context.user_data['edit_project_id'] = project_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            "✏️ <b>ویرایش پروژه</b>\n\n"
+            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
+            "(برای انصراف /cancel را بفرستید)",
+            parse_mode='HTML'
+        )
+        return PROJECT_EDIT_DESCRIPTION
+
+    @staticmethod
+    async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        
+        db = BaseHandler.get_db()
+        try:
+            project = ProjectService.get_by_id(db, project_id)
+            if not project:
+                await query.answer("❌ پروژه یافت نشد", True)
+                return
+            
+            if ProjectService.delete(db, project_id):
+                await query.answer("✅ پروژه حذف شد")
+                await BaseHandler.edit_message(
+                    update, context,
+                    f"✅ پروژه '{project.customer.name} - {project.project_type.value}' با موفقیت حذف شد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} deleted")
+            else:
+                await query.answer("❌ خطا در حذف پروژه", True)
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        context.user_data['edit_project_id'] = project_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            "✏️ <b>ویرایش پروژه</b>\n\n"
+            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
+            "(برای انصراف /cancel را بفرستید)",
+            parse_mode='HTML'
+        )
+        return PROJECT_EDIT_DESCRIPTION
