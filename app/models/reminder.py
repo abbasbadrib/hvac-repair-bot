@@ -2,7 +2,7 @@
 Reminder model.
 """
 
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, Enum, String
+from sqlalchemy import Column, Integer, DateTime, String, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum

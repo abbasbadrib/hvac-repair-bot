@@ -2,7 +2,7 @@
 Payment model and enums.
 """
 
-from sqlalchemy import Column, Integer, Float, ForeignKey, DateTime, Enum
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
