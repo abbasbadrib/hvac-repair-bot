@@ -13,10 +13,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION) = range(4)
+EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION = range(4)
 
 class ExpenseHandler(BaseHandler):
     """Handler for expense operations."""
+    
+    # Expose states for main.py
+    EXPENSE_TYPE = EXPENSE_TYPE
+    EXPENSE_AMOUNT = EXPENSE_AMOUNT
+    EXPENSE_PAID_BY = EXPENSE_PAID_BY
+    EXPENSE_DESCRIPTION = EXPENSE_DESCRIPTION
     
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,6 +30,7 @@ class ExpenseHandler(BaseHandler):
         query = update.callback_query
         project_id = int(query.data.split('_')[1])
         context.user_data['current_project_id'] = project_id
+        await query.answer()
         
         db = BaseHandler.get_db()
         try:
@@ -31,34 +38,22 @@ class ExpenseHandler(BaseHandler):
             project = ProjectService.get_by_id(db, project_id)
             
             if not expenses:
-                await query.answer()
-                await BaseHandler.edit_message(
-                    update, context,
-                    f"💳 <b>هزینه‌های پروژه</b>\n\n"
-                    f"👤 مشتری: {project.customer.name}\n"
-                    f"❌ هیچ هزینه‌ای ثبت نشده است.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
-                        [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                    ]),
-                    parse_mode='HTML'
-                )
+                text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ هزینه‌ای ثبت نشده است."
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+                ])
+                await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
-            text = f"💳 <b>هزینه‌های پروژه</b>\n\n"
-            text += f"👤 مشتری: {project.customer.name}\n\n"
-            
+            text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             total_expenses = 0
             me_expenses = 0
             partner_expenses = 0
             
             for i, expense in enumerate(expenses, 1):
                 paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥"
-                text += (
-                    f"{i}. {expense.expense_type.value}\n"
-                    f"   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n"
-                    f"   📝 {expense.description or 'بدون توضیح'}\n\n"
-                )
+                text += f"{i}. {expense.expense_type.value}\n   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n\n"
                 total_expenses += expense.amount
                 if expense.paid_by == PaidBy.ME:
                     me_expenses += expense.amount
@@ -74,13 +69,7 @@ class ExpenseHandler(BaseHandler):
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
-            await query.answer()
-            await BaseHandler.edit_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+            await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         finally:
             db.close()
     
@@ -91,6 +80,8 @@ class ExpenseHandler(BaseHandler):
         project_id = int(query.data.split('_')[2])
         context.user_data['expense_project_id'] = project_id
         
+        await query.answer()
+        
         # Show expense type selection
         keyboard = []
         for exp_type in ExpenseType:
@@ -99,11 +90,9 @@ class ExpenseHandler(BaseHandler):
             ])
         keyboard.append([InlineKeyboardButton("🔙 انصراف", callback_data="cancel_expense")])
         
-        await query.answer()
         await BaseHandler.edit_message(
             update, context,
-            "💳 <b>ثبت هزینه جدید</b>\n\n"
-            "لطفاً <b>نوع هزینه</b> را انتخاب کنید:",
+            "💳 <b>ثبت هزینه جدید</b>\n\nلطفاً <b>نوع هزینه</b> را انتخاب کنید:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
@@ -120,8 +109,7 @@ class ExpenseHandler(BaseHandler):
         await query.answer()
         await BaseHandler.edit_message(
             update, context,
-            f"💳 <b>ثبت هزینه {expense_type}</b>\n\n"
-            "💰 مبلغ هزینه را وارد کنید (تومان):",
+            f"💳 <b>ثبت هزینه {expense_type}</b>\n\n💰 مبلغ هزینه را وارد کنید (تومان):",
             parse_mode='HTML'
         )
         return EXPENSE_AMOUNT
@@ -143,17 +131,18 @@ class ExpenseHandler(BaseHandler):
             return EXPENSE_AMOUNT
         
         # Show who paid
-        keyboard = [
+        keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("👤 من", callback_data="exp_paid_me"),
                 InlineKeyboardButton("👥 شریک", callback_data="exp_paid_partner")
-            ]
-        ]
+            ],
+            [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_expense")]
+        ])
         
         await BaseHandler.send_message(
             update, context,
             "💳 چه کسی این هزینه را پرداخت کرده است؟",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=keyboard,
             parse_mode='HTML'
         )
         return EXPENSE_PAID_BY
@@ -166,10 +155,9 @@ class ExpenseHandler(BaseHandler):
         context.user_data['expense_paid_by'] = PaidBy.ME if paid_by == 'me' else PaidBy.PARTNER
         
         await query.answer()
-        await BaseHandler.send_message(
+        await BaseHandler.edit_message(
             update, context,
-            "📝 لطفاً <b>توضیحات</b> هزینه را وارد کنید:\n"
-            "(برای رد کردن از این مرحله '.' را وارد کنید)",
+            "📝 لطفاً <b>توضیحات</b> هزینه را وارد کنید:\n(برای رد کردن '.' را وارد کنید)",
             parse_mode='HTML'
         )
         return EXPENSE_DESCRIPTION
@@ -208,24 +196,20 @@ class ExpenseHandler(BaseHandler):
             )
             
             text = (
-                "✅ <b>هزینه با موفقیت ثبت شد!</b>\n\n"
+                f"✅ <b>هزینه با موفقیت ثبت شد!</b>\n\n"
                 f"💳 نوع: {expense.expense_type.value}\n"
                 f"💰 مبلغ: {expense.amount:,.0f} تومان\n"
                 f"👤 پرداخت کننده: {expense.paid_by.value}\n"
                 f"📝 توضیحات: {expense.description or 'ثبت نشده'}"
             )
             
-            await BaseHandler.send_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ ثبت هزینه دیگر", callback_data=f"add_expense_{project_id}")],
-                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data=f"expenses_{project_id}")],
-                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                ]),
-                parse_mode='HTML'
-            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ ثبت هزینه دیگر", callback_data=f"add_expense_{project_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data=f"expenses_{project_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+            ])
             
+            await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
             logger.info(f"New expense added: {expense.expense_type.value} for project {project_id}")
             
         except Exception as e:
