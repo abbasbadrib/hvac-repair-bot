@@ -16,10 +16,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(PROJECT_CUSTOMER, PROJECT_TYPE, PROJECT_SERVICE, PROJECT_DESCRIPTION, PROJECT_LABOR) = range(5)
+PROJECT_CUSTOMER, PROJECT_TYPE, PROJECT_SERVICE, PROJECT_DESCRIPTION, PROJECT_LABOR = range(5)
 
 class ProjectHandler(BaseHandler):
     """Handler for project operations."""
+    
+    # Expose states for main.py
+    PROJECT_CUSTOMER = PROJECT_CUSTOMER
+    PROJECT_TYPE = PROJECT_TYPE
+    PROJECT_SERVICE = PROJECT_SERVICE
+    PROJECT_DESCRIPTION = PROJECT_DESCRIPTION
+    PROJECT_LABOR = PROJECT_LABOR
     
     @staticmethod
     async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,14 +85,6 @@ class ProjectHandler(BaseHandler):
                 await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
                 return
             
-            # Calculate financials
-            financials = CalculatorService.calculate_project_financials(
-                parts_profit=0,  # TODO: Get from parts
-                labor_cost=project.labor_cost,
-                expenses=[],  # TODO: Get from expenses
-                total_payments=0  # TODO: Get from payments
-            )
-            
             status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅" if project.status == ProjectStatus.COMPLETED else "❌"
             
             text = (
@@ -114,7 +113,7 @@ class ProjectHandler(BaseHandler):
                 ],
                 [
                     InlineKeyboardButton("✅ پایان پروژه", callback_data=f"complete_{project_id}"),
-                    InlineKeyboardButton("❌ لغو پروژه", callback_data=f"cancel_{project_id}")
+                    InlineKeyboardButton("❌ لغو پروژه", callback_data=f"cancel_project_{project_id}")
                 ],
                 [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
             ]
@@ -135,7 +134,6 @@ class ProjectHandler(BaseHandler):
         if query:
             await query.answer()
         
-        # Show customer selection
         db = BaseHandler.get_db()
         try:
             customers = CustomerService.get_all(db)
@@ -145,7 +143,7 @@ class ProjectHandler(BaseHandler):
                     "❌ ابتدا باید یک مشتری ثبت کنید.",
                     reply_markup=get_main_keyboard()
                 )
-                return
+                return ConversationHandler.END
             
             keyboard = []
             for customer in customers[:10]:
@@ -182,6 +180,134 @@ class ProjectHandler(BaseHandler):
             parse_mode='HTML'
         )
         return PROJECT_TYPE
+    
+    @staticmethod
+    async def add_project_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get project type."""
+        query = update.callback_query
+        project_type = query.data.split('_')[2]
+        
+        if project_type == 'air':
+            context.user_data['project_type'] = ProjectType.AIR_CONDITIONER
+        else:
+            context.user_data['project_type'] = ProjectType.PACKAGE
+        
+        await query.answer()
+        
+        from app.keyboards.project_keyboards import get_service_type_keyboard
+        await BaseHandler.edit_message(
+            update, context,
+            "🛠 لطفاً <b>نوع سرویس</b> را انتخاب کنید:",
+            reply_markup=get_service_type_keyboard(),
+            parse_mode='HTML'
+        )
+        return PROJECT_SERVICE
+    
+    @staticmethod
+    async def add_project_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get service type."""
+        query = update.callback_query
+        service_type = query.data.split('_')[1]
+        
+        service_map = {
+            'install': 'نصب',
+            'repair': 'تعمیر',
+            'visit': 'بازدید'
+        }
+        context.user_data['project_service'] = service_map[service_type]
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            "📝 لطفاً <b>توضیحات</b> پروژه را وارد کنید:\n(برای رد کردن '.' را وارد کنید)",
+            parse_mode='HTML'
+        )
+        return PROJECT_DESCRIPTION
+    
+    @staticmethod
+    async def add_project_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get project description."""
+        description = update.message.text.strip()
+        if description == '.':
+            description = None
+        context.user_data['project_description'] = description
+        
+        await BaseHandler.send_message(
+            update, context,
+            "💰 لطفاً مبلغ <b>اجرت</b> را وارد کنید:\n(برای رد کردن 0 را وارد کنید)",
+            parse_mode='HTML'
+        )
+        return PROJECT_LABOR
+    
+    @staticmethod
+    async def add_project_labor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get labor cost and save project."""
+        try:
+            labor_cost = float(update.message.text.replace(',', '').strip())
+            if labor_cost < 0:
+                labor_cost = 0.0
+        except ValueError:
+            labor_cost = 0.0
+        
+        context.user_data['project_labor'] = labor_cost
+        
+        db = BaseHandler.get_db()
+        try:
+            customer_id = context.user_data.get('project_customer_id')
+            if not customer_id:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ خطا: مشتری انتخاب نشده است.",
+                    reply_markup=get_main_keyboard()
+                )
+                return ConversationHandler.END
+            
+            project = ProjectService.create(
+                db,
+                customer_id=customer_id,
+                project_type=context.user_data['project_type'],
+                service_type=context.user_data['project_service'],
+                description=context.user_data.get('project_description'),
+                labor_cost=labor_cost
+            )
+            
+            text = (
+                f"✅ <b>پروژه با موفقیت ثبت شد!</b>\n\n"
+                f"🛠 شناسه: {project.id}\n"
+                f"👤 مشتری: {project.customer.name}\n"
+                f"❄️ نوع: {project.project_type.value}\n"
+                f"🛠 سرویس: {project.service_type}\n"
+                f"💰 اجرت: {project.labor_cost:,.0f} تومان"
+            )
+            
+            keyboard = [
+                [InlineKeyboardButton("🔩 ثبت قطعات", callback_data=f"parts_{project.id}")],
+                [InlineKeyboardButton("💰 ثبت پرداخت", callback_data=f"payment_{project.id}")],
+                [InlineKeyboardButton("💳 ثبت هزینه", callback_data=f"expense_{project.id}")],
+                [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project.id}")],
+                [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
+            ]
+            
+            await BaseHandler.send_message(
+                update, context,
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+            logger.info(f"New project added: {project.id} - {project.customer.name}")
+            
+        except Exception as e:
+            logger.error(f"Error adding project: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا در ثبت پروژه: {str(e)}"
+            )
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
     
     @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
