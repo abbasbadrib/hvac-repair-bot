@@ -4,7 +4,8 @@ Base handler class with common functionality.
 
 from telegram import Update
 from telegram.ext import ContextTypes
-from app.database.base import SessionLocal
+from app.core.database import get_db
+from app.core.exceptions import AppException, ValidationError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class BaseHandler:
     @staticmethod
     def get_db():
         """Get database session."""
-        return SessionLocal()
+        return get_db()
     
     @staticmethod
     async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -38,13 +39,12 @@ class BaseHandler:
                 )
             else:
                 logger.error("No message or callback_query found in update")
+                # Try to answer callback query if exists
+                if update.callback_query:
+                    await update.callback_query.answer("خطا در ارسال پیام", show_alert=True)
         except Exception as e:
             logger.error(f"Error sending message: {e}")
-            try:
-                if update.callback_query:
-                    await update.callback_query.answer("❌ خطا در ارسال پیام", show_alert=True)
-            except:
-                pass
+            await BaseHandler._safe_answer(update, "❌ خطا در ارسال پیام")
     
     @staticmethod
     async def edit_message(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -61,10 +61,7 @@ class BaseHandler:
                 logger.error("No callback_query found for edit_message")
         except Exception as e:
             logger.error(f"Error editing message: {e}")
-            try:
-                await update.callback_query.answer("❌ خطا در ویرایش پیام", show_alert=True)
-            except:
-                pass
+            await BaseHandler._safe_answer(update, "❌ خطا در ویرایش پیام")
     
     @staticmethod
     async def answer_callback(update: Update, text: str, show_alert=False):
@@ -74,3 +71,27 @@ class BaseHandler:
                 await update.callback_query.answer(text=text, show_alert=show_alert)
         except Exception as e:
             logger.error(f"Error answering callback: {e}")
+    
+    @staticmethod
+    async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE, error: Exception):
+        """Handle errors gracefully."""
+        logger.error(f"Error: {error}")
+        
+        # Don't show system errors to users
+        if isinstance(error, ValidationError):
+            message = str(error)
+        elif isinstance(error, AppException):
+            message = "❌ خطا در سیستم. لطفاً دوباره تلاش کنید."
+        else:
+            message = "❌ خطای ناشناخته. لطفاً دوباره تلاش کنید."
+        
+        await BaseHandler.send_message(update, context, message)
+    
+    @staticmethod
+    async def _safe_answer(update: Update, text: str):
+        """Safely answer a callback query."""
+        try:
+            if update.callback_query:
+                await update.callback_query.answer(text, show_alert=True)
+        except:
+            pass
