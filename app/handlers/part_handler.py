@@ -7,81 +7,74 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base_handler import BaseHandler
 from app.services.part_service import PartService
 from app.services.project_service import ProjectService
+from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(PART_NAME, PART_QUANTITY, PART_PURCHASE, PART_SELLING) = range(4)
+PART_NAME, PART_QUANTITY, PART_PURCHASE, PART_SELLING = range(4)
 
 class PartHandler(BaseHandler):
     """Handler for part operations."""
     
+    # Expose states for main.py
+    PART_NAME = PART_NAME
+    PART_QUANTITY = PART_QUANTITY
+    PART_PURCHASE = PART_PURCHASE
+    PART_SELLING = PART_SELLING
+    
     @staticmethod
     async def show_parts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show parts for a project."""
+        # Check if we're in a conversation
+        if context.user_data.get('in_part_conversation'):
+            await PartHandler.cancel(update, context)
+            return
+        
         query = update.callback_query
-        project_id = int(query.data.split('_')[1])
-        context.user_data['current_project_id'] = project_id
+        if query:
+            project_id = int(query.data.split('_')[1])
+            context.user_data['current_project_id'] = project_id
+            await query.answer()
         
         db = BaseHandler.get_db()
         try:
+            project_id = context.user_data.get('current_project_id')
+            if not project_id:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ پروژه‌ای انتخاب نشده است.",
+                    reply_markup=get_main_keyboard()
+                )
+                return
+            
             parts = PartService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
             
             if not parts:
-                await query.answer()
-                await BaseHandler.edit_message(
-                    update, context,
-                    f"🔩 <b>قطعات پروژه</b>\n\n"
-                    f"مشتری: {project.customer.name}\n"
-                    f"❌ هیچ قطعه‌ای ثبت نشده است.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ ثبت قطعه جدید", callback_data=f"add_part_{project_id}")],
-                        [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                    ]),
-                    parse_mode='HTML'
-                )
+                text = f"🔩 <b>قطعات پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ قطعه‌ای ثبت نشده است."
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ ثبت قطعه جدید", callback_data=f"add_part_{project_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+                ])
+                await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
-            text = f"🔩 <b>قطعات پروژه</b>\n\n"
-            text += f"👤 مشتری: {project.customer.name}\n"
-            text += f"🛠 پروژه: {project.project_type.value} - {project.service_type}\n\n"
-            
+            text = f"🔩 <b>قطعات پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             total_profit = 0
             for i, part in enumerate(parts, 1):
-                text += (
-                    f"{i}. {part.name}\n"
-                    f"   تعداد: {part.quantity} | قیمت خرید: {part.purchase_price:,.0f} | "
-                    f"قیمت فروش: {part.selling_price:,.0f}\n"
-                    f"   سود: {part.profit:,.0f} تومان\n\n"
-                )
+                text += f"{i}. {part.name}\n   تعداد: {part.quantity} | قیمت فروش: {part.selling_price:,.0f}\n   سود: {part.profit:,.0f}\n\n"
                 total_profit += part.profit
             
             text += f"💰 <b>سود کل قطعات</b>: {total_profit:,.0f} تومان"
             
-            keyboard = []
-            for part in parts[:10]:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"✏️ {part.name}",
-                        callback_data=f"edit_part_{part.id}"
-                    ),
-                    InlineKeyboardButton(
-                        "🗑",
-                        callback_data=f"delete_part_{part.id}"
-                    )
-                ])
-            keyboard.append([InlineKeyboardButton("➕ ثبت قطعه جدید", callback_data=f"add_part_{project_id}")])
-            keyboard.append([InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")])
+            keyboard = [
+                [InlineKeyboardButton("➕ ثبت قطعه جدید", callback_data=f"add_part_{project_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+            ]
             
-            await query.answer()
-            await BaseHandler.edit_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+            await BaseHandler.send_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         finally:
             db.close()
     
@@ -91,12 +84,12 @@ class PartHandler(BaseHandler):
         query = update.callback_query
         project_id = int(query.data.split('_')[2])
         context.user_data['part_project_id'] = project_id
+        context.user_data['in_part_conversation'] = True
         
         await query.answer()
         await BaseHandler.edit_message(
             update, context,
-            "🔩 <b>ثبت قطعه جدید</b>\n\n"
-            "لطفاً <b>نام قطعه</b> را وارد کنید:",
+            "🔩 <b>ثبت قطعه جدید</b>\n\nلطفاً <b>نام قطعه</b> را وارد کنید:",
             parse_mode='HTML'
         )
         return PART_NAME
@@ -105,7 +98,6 @@ class PartHandler(BaseHandler):
     async def add_part_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get part name."""
         context.user_data['part_name'] = update.message.text.strip()
-        
         await BaseHandler.send_message(
             update, context,
             "🔢 تعداد قطعه را وارد کنید:",
@@ -175,7 +167,6 @@ class PartHandler(BaseHandler):
             )
             return PART_SELLING
         
-        # Save part
         db = BaseHandler.get_db()
         try:
             project_id = context.user_data['part_project_id']
@@ -189,7 +180,7 @@ class PartHandler(BaseHandler):
             )
             
             text = (
-                "✅ <b>قطعه با موفقیت ثبت شد!</b>\n\n"
+                f"✅ <b>قطعه با موفقیت ثبت شد!</b>\n\n"
                 f"🔩 نام: {part.name}\n"
                 f"🔢 تعداد: {part.quantity}\n"
                 f"💰 قیمت خرید: {part.purchase_price:,.0f} تومان\n"
@@ -197,17 +188,13 @@ class PartHandler(BaseHandler):
                 f"📈 سود: {part.profit:,.0f} تومان"
             )
             
-            await BaseHandler.send_message(
-                update, context,
-                text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ ثبت قطعه دیگر", callback_data=f"add_part_{project_id}")],
-                    [InlineKeyboardButton("🔙 بازگشت به قطعات", callback_data=f"parts_{project_id}")],
-                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                ]),
-                parse_mode='HTML'
-            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ ثبت قطعه دیگر", callback_data=f"add_part_{project_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به قطعات", callback_data=f"parts_{project_id}")],
+                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+            ])
             
+            await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
             logger.info(f"New part added: {part.name} for project {project_id}")
             
         except Exception as e:
@@ -223,35 +210,12 @@ class PartHandler(BaseHandler):
         return ConversationHandler.END
     
     @staticmethod
-    async def delete_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Delete a part."""
-        query = update.callback_query
-        part_id = int(query.data.split('_')[2])
-        
-        db = BaseHandler.get_db()
-        try:
-            part = PartService.get_by_id(db, part_id)
-            if not part:
-                await query.answer("❌ قطعه یافت نشد", True)
-                return
-            
-            project_id = part.project_id
-            
-            if PartService.delete(db, part_id):
-                await query.answer("✅ قطعه حذف شد")
-                await PartHandler.show_parts(update, context)
-                logger.info(f"Part {part_id} deleted")
-            else:
-                await query.answer("❌ خطا در حذف قطعه", True)
-        finally:
-            db.close()
-    
-    @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Cancel the conversation."""
+        context.user_data.clear()
         await BaseHandler.send_message(
             update, context,
-            "❌ عملیات لغو شد."
+            "❌ عملیات لغو شد.",
+            reply_markup=get_main_keyboard()
         )
-        context.user_data.clear()
         return ConversationHandler.END
