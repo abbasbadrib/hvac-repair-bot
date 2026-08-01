@@ -90,9 +90,8 @@ class ProjectHandler(BaseHandler):
                 await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
                 return
             
-            # Get all parts and calculate profit
+            # Get all parts
             parts = PartService.get_by_project(db, project_id)
-            total_parts_profit = sum(p.profit for p in parts)
             
             # Get expenses
             expenses = ExpenseService.get_by_project(db, project_id)
@@ -104,10 +103,10 @@ class ProjectHandler(BaseHandler):
             # Get referral
             referral = ReferralService.get_by_project(db, project_id)
             
-            # Calculate financials - با منطق جدید
+            # Calculate financials with new logic
             financials = CalculatorService.calculate_project_financials(
-                total_amount_from_customer=project.labor_cost,  # مبلغ کل دریافتی از مشتری
-                parts_profit=total_parts_profit,
+                total_amount_from_customer=project.labor_cost,
+                parts=parts,
                 expenses=expenses,
                 referral_percentage=referral.percentage if referral else 0,
                 referral_name=referral.referrer_name if referral else "",
