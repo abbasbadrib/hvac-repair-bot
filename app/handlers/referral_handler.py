@@ -7,14 +7,13 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base_handler import BaseHandler
 from app.services.referral_service import ReferralService
 from app.services.project_service import ProjectService
-from app.keyboards.referral_keyboard import get_referral_percentage_keyboard
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Conversation states
-REFERRAL_NAME, REFERRAL_PERCENTAGE, REFERRAL_CUSTOM = range(3)
+REFERRAL_NAME, REFERRAL_PERCENTAGE = range(2)
 
 class ReferralHandler(BaseHandler):
     """Handler for referral operations."""
@@ -22,7 +21,14 @@ class ReferralHandler(BaseHandler):
     # Expose states for main.py
     REFERRAL_NAME = REFERRAL_NAME
     REFERRAL_PERCENTAGE = REFERRAL_PERCENTAGE
-    REFERRAL_CUSTOM = REFERRAL_CUSTOM
+    
+    # Default referral percentage for each referrer
+    DEFAULT_REFERRAL_PERCENT = {
+        "اخلاقی": 25,
+        # می‌توانید افراد دیگر را هم اضافه کنید:
+        # "رضایی": 15,
+        # "کریمی": 20,
+    }
     
     @staticmethod
     async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,7 +39,6 @@ class ReferralHandler(BaseHandler):
             context.user_data['referral_project_id'] = project_id
             await query.answer()
         else:
-            # If called from main menu, ask for project first
             await BaseHandler.send_message(
                 update, context,
                 "🤝 لطفاً ابتدا یک پروژه را انتخاب کنید.",
@@ -108,33 +113,60 @@ class ReferralHandler(BaseHandler):
     
     @staticmethod
     async def add_referral_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get referrer name."""
-        context.user_data['referral_name'] = update.message.text.strip()
+        """Get referrer name and auto-set percentage if known."""
+        name = update.message.text.strip()
+        context.user_data['referral_name'] = name
         
-        await BaseHandler.send_message(
-            update, context,
-            "📊 لطفاً <b>درصد حق معرفی</b> را انتخاب کنید:",
-            reply_markup=get_referral_percentage_keyboard(context.user_data['referral_project_id']),
-            parse_mode='HTML'
-        )
-        return REFERRAL_PERCENTAGE
+        # Check if we have a default percentage for this referrer
+        default_pct = ReferralHandler.DEFAULT_REFERRAL_PERCENT.get(name)
+        
+        if default_pct is not None:
+            # Auto-set percentage and save
+            context.user_data['referral_percentage'] = default_pct
+            await ReferralHandler.save_referral(update, context, auto=True)
+            return ConversationHandler.END
+        else:
+            # Ask for percentage
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("۰٪", callback_data="ref_pct_0"),
+                 InlineKeyboardButton("۱۰٪", callback_data="ref_pct_10"),
+                 InlineKeyboardButton("۱۵٪", callback_data="ref_pct_15")],
+                [InlineKeyboardButton("۲۰٪", callback_data="ref_pct_20"),
+                 InlineKeyboardButton("۲۵٪", callback_data="ref_pct_25"),
+                 InlineKeyboardButton("✏️ دلخواه", callback_data="ref_pct_custom")],
+                [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_referral")]
+            ])
+            
+            await BaseHandler.send_message(
+                update, context,
+                f"📊 لطفاً <b>درصد حق معرفی</b> را انتخاب کنید:\n\n"
+                f"👤 معرفی کننده: {name}",
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            return REFERRAL_PERCENTAGE
     
     @staticmethod
     async def add_referral_percentage(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get referral percentage."""
+        """Get referral percentage from callback."""
         query = update.callback_query
-        parts = query.data.split('_')
+        data = query.data
+        await query.answer()
         
-        if parts[1] == 'custom':
-            await query.answer()
+        if data == "cancel_referral":
+            await ReferralHandler.cancel(update, context)
+            return ConversationHandler.END
+        
+        if data == "ref_pct_custom":
             await BaseHandler.edit_message(
                 update, context,
                 "✏️ لطفاً <b>درصد</b> مورد نظر را وارد کنید (عدد بین 0 تا 100):",
                 parse_mode='HTML'
             )
-            return REFERRAL_CUSTOM
+            return REFERRAL_PERCENTAGE
         
-        percentage = int(parts[3])
+        # Extract percentage from callback data (e.g., "ref_pct_25" -> 25)
+        percentage = int(data.split('_')[2])
         context.user_data['referral_percentage'] = percentage
         
         # Save referral
@@ -142,8 +174,8 @@ class ReferralHandler(BaseHandler):
         return ConversationHandler.END
     
     @staticmethod
-    async def add_referral_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get custom percentage."""
+    async def add_referral_custom_percentage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get custom percentage from text input."""
         try:
             percentage = float(update.message.text.strip())
             if percentage < 0 or percentage > 100:
@@ -155,23 +187,25 @@ class ReferralHandler(BaseHandler):
                 "❌ درصد نامعتبر است. لطفاً عددی بین 0 تا 100 وارد کنید.",
                 parse_mode='HTML'
             )
-            return REFERRAL_CUSTOM
+            return REFERRAL_PERCENTAGE
         
         await ReferralHandler.save_referral(update, context)
         return ConversationHandler.END
     
     @staticmethod
-    async def save_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def save_referral(update: Update, context: ContextTypes.DEFAULT_TYPE, auto: bool = False):
         """Save referral to database."""
         db = BaseHandler.get_db()
         try:
             project_id = context.user_data['referral_project_id']
+            name = context.user_data['referral_name']
+            percentage = context.user_data['referral_percentage']
             
             referral = ReferralService.create(
                 db,
                 project_id=project_id,
-                referrer_name=context.user_data['referral_name'],
-                percentage=context.user_data['referral_percentage']
+                referrer_name=name,
+                percentage=percentage
             )
             
             text = (
@@ -182,6 +216,9 @@ class ReferralHandler(BaseHandler):
                 "💡 مبلغ حق معرفی پس از تکمیل پروژه محاسبه می‌شود."
             )
             
+            if auto:
+                text += f"\n🔹 درصد {percentage}% به‌طور خودکار برای '{name}' تنظیم شد."
+            
             await BaseHandler.send_message(
                 update, context,
                 text,
@@ -191,7 +228,7 @@ class ReferralHandler(BaseHandler):
                 parse_mode='HTML'
             )
             
-            logger.info(f"New referral added for project {project_id}")
+            logger.info(f"New referral added for project {project_id}: {name} - {percentage}%")
             
         except Exception as e:
             logger.error(f"Error adding referral: {e}")

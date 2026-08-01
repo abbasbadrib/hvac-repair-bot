@@ -219,3 +219,25 @@ if __name__ == "__main__":
     application.add_handler(CallbackQueryHandler(ProjectHandler.cancel_project, pattern="^cancel_project_"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.view_project, pattern="^view_project_"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^list_projects$"))
+# در بخش setup_handlers، referral_conv را به‌روز کنید:
+
+    referral_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(ReferralHandler.add_referral_start, pattern="^add_referral_")
+        ],
+        states={
+            ReferralHandler.REFERRAL_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ReferralHandler.add_referral_name)
+            ],
+            ReferralHandler.REFERRAL_PERCENTAGE: [
+                CallbackQueryHandler(ReferralHandler.add_referral_percentage, pattern="^ref_pct_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ReferralHandler.add_referral_custom_percentage)
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", ReferralHandler.cancel),
+            CallbackQueryHandler(ReferralHandler.cancel, pattern="^cancel_referral$")
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(referral_conv)
