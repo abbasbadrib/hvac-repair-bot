@@ -23,7 +23,6 @@ class FreeTextHandler(BaseHandler):
         'کولرگازی': ProjectType.AIR_CONDITIONER,
     }
     
-    # کلمات و کاراکترهایی که نباید پردازش شوند
     EXCLUDED_PATTERNS = [
         r'^🛠', r'^🏠', r'^👤', r'^💰', r'^💳', r'^🔩', r'^👥', r'^🤝', r'^📊', r'^⏰', r'^⚙',
         r'^➕', r'^✅', r'^❌', r'^🔙', r'^📋', r'^✏️', r'^🗑'
@@ -34,21 +33,15 @@ class FreeTextHandler(BaseHandler):
         """پردازش متن آزاد برای ثبت سریع پروژه."""
         text = update.message.text.strip()
         
-        # اگر متن با ایموجی‌های منو شروع شود، پردازش نکن
         for pattern in FreeTextHandler.EXCLUDED_PATTERNS:
             if re.match(pattern, text):
                 return False
         
-        # بررسی اینکه آیا کاربر قصد ثبت سریع پروژه را دارد
         if not FreeTextHandler.is_project_request(text):
             return False
         
         result = await FreeTextHandler.parse_and_create_project(update, context, text)
-        
-        if result:
-            return True
-        
-        return False
+        return result if result else False
     
     @staticmethod
     def is_project_request(text: str) -> bool:

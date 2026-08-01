@@ -2,7 +2,7 @@
 Dashboard and main menu handlers.
 """
 
-from telegram import Update, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from app.handlers.base_handler import BaseHandler
 from app.keyboards.main_keyboard import get_main_keyboard
