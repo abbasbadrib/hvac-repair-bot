@@ -241,3 +241,10 @@ if __name__ == "__main__":
         allow_reentry=True
     )
     application.add_handler(referral_conv)
+# اضافه کردن به بخش Callback handlers:
+
+    # Referral quick buttons
+    application.add_handler(CallbackQueryHandler(ReferralHandler.quick_add_referral, pattern="^ref_quick_"))
+    application.add_handler(CallbackQueryHandler(ReferralHandler.manage_referrers, pattern="^manage_referrers$"))
+    application.add_handler(CallbackQueryHandler(ReferralHandler.add_referrer, pattern="^add_referrer$"))
+    application.add_handler(CallbackQueryHandler(ReferralHandler.show_referral, pattern="^back_to_referral$"))
