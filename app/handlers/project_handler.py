@@ -4,6 +4,7 @@ Project management handlers.
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
+from sqlalchemy.orm import joinedload
 from app.handlers.base_handler import BaseHandler
 from app.services.project_service import ProjectService
 from app.services.customer_service import CustomerService
@@ -13,7 +14,7 @@ from app.services.payment_service import PaymentService
 from app.services.referral_service import ReferralService
 from app.domain.services.calculator_service import CalculatorService
 from app.models.project import ProjectType, ProjectStatus
-from app.keyboards.project_keyboards import get_project_keyboard, get_project_type_keyboard
+from app.keyboards.project_keyboards import get_project_type_keyboard
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 
@@ -25,7 +26,6 @@ PROJECT_CUSTOMER, PROJECT_TYPE, PROJECT_SERVICE, PROJECT_DESCRIPTION, PROJECT_LA
 class ProjectHandler(BaseHandler):
     """Handler for project operations."""
     
-    # Expose states for main.py
     PROJECT_CUSTOMER = PROJECT_CUSTOMER
     PROJECT_TYPE = PROJECT_TYPE
     PROJECT_SERVICE = PROJECT_SERVICE
@@ -38,7 +38,7 @@ class ProjectHandler(BaseHandler):
         """Show list of projects."""
         db = BaseHandler.get_db()
         try:
-            projects = ProjectService.get_all(db)
+            projects = db.query(ProjectService.model).options(joinedload(ProjectService.model.customer)).all()
             if not projects:
                 await BaseHandler.send_message(
                     update, context,
@@ -85,25 +85,17 @@ class ProjectHandler(BaseHandler):
         project_id = int(query.data.split('_')[2])
         db = BaseHandler.get_db()
         try:
-            project = ProjectService.get_by_id(db, project_id)
+            project = db.query(ProjectService.model).options(joinedload(ProjectService.model.customer)).filter(ProjectService.model.id == project_id).first()
             if not project:
                 await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
                 return
             
-            # Get all parts
             parts = PartService.get_by_project(db, project_id)
-            
-            # Get expenses
             expenses = ExpenseService.get_by_project(db, project_id)
-            
-            # Get payments
             payments = PaymentService.get_by_project(db, project_id)
             total_payments = sum(p.amount for p in payments)
-            
-            # Get referral
             referral = ReferralService.get_by_project(db, project_id)
             
-            # Calculate financials with new logic
             financials = CalculatorService.calculate_project_financials(
                 total_amount_from_customer=project.labor_cost,
                 parts=parts,
@@ -122,12 +114,12 @@ class ProjectHandler(BaseHandler):
                 f"❄️ <b>نوع</b>: {project.project_type.value}\n"
                 f"🛠 <b>نوع سرویس</b>: {project.service_type}\n"
                 f"{status_emoji} <b>وضعیت</b>: {project.status.value}\n"
-                f"💰 <b>مبلغ دریافت‌شده</b>: {project.labor_cost:,.0f} تومان\n"
+                f"💰 <b>مبلغ کل</b>: {project.labor_cost:,.0f} تومان\n"
                 f"📅 <b>تاریخ شروع</b>: {project.start_date.strftime('%Y-%m-%d')}\n\n"
                 f"📊 <b>محاسبات مالی</b>:\n"
                 f"🔩 <b>سود قطعات</b>: {financials.total_parts_profit:,.0f} تومان\n"
                 f"💰 <b>اجرت</b>: {financials.labor_cost:,.0f} تومان\n"
-                f"📈 <b>درآمد کل</b>: {financials.total_income:,.0f} تومان\n"
+                f"📈 <b>مبلغ کل</b>: {financials.total_income:,.0f} تومان\n"
                 f"💳 <b>هزینه‌ها</b>: {financials.total_expenses:,.0f} تومان\n"
                 f"📊 <b>سود ناخالص</b>: {financials.gross_profit:,.0f} تومان\n"
                 f"🤝 <b>حق معرفی</b>: {financials.referral_amount:,.0f} تومان ({financials.referral_percentage}%)\n"
@@ -135,7 +127,8 @@ class ProjectHandler(BaseHandler):
                 f"👤 <b>سهم من</b>: {financials.my_share:,.0f} تومان\n"
                 f"👥 <b>سهم شریک</b>: {financials.partner_share:,.0f} تومان\n"
                 f"💳 <b>طلب من</b>: {financials.my_debt:,.0f} تومان\n"
-                f"💰 <b>بدهی مشتری</b>: {financials.customer_debt:,.0f} تومان"
+                f"💰 <b>بدهی مشتری</b>: {financials.customer_debt:,.0f} تومان\n\n"
+                f"💡 برای تسویه بدهی، از بخش '💰 ثبت درآمد' استفاده کنید."
             )
             
             keyboard = [
@@ -168,6 +161,54 @@ class ProjectHandler(BaseHandler):
             db.close()
     
     @staticmethod
+    async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        
+        db = BaseHandler.get_db()
+        try:
+            project = db.query(ProjectService.model).options(joinedload(ProjectService.model.customer)).filter(ProjectService.model.id == project_id).first()
+            if not project:
+                await query.answer("❌ پروژه یافت نشد", True)
+                return
+            
+            project_name = f"{project.customer.name} - {project.project_type.value}"
+            
+            if ProjectService.delete(db, project_id):
+                await query.answer("✅ پروژه حذف شد")
+                await BaseHandler.edit_message(
+                    update, context,
+                    f"✅ پروژه '{project_name}' با موفقیت حذف شد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} deleted")
+            else:
+                await query.answer("❌ خطا در حذف پروژه", True)
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing project."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        context.user_data['edit_project_id'] = project_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            "✏️ <b>ویرایش پروژه</b>\n\n"
+            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
+            "(برای انصراف /cancel را بفرستید)",
+            parse_mode='HTML'
+        )
+        return 10  # EDIT_PROJECT_DESCRIPTION
+    
+    @staticmethod
     async def complete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Complete a project."""
         query = update.callback_query
@@ -182,7 +223,8 @@ class ProjectHandler(BaseHandler):
                     update, context,
                     f"✅ <b>پروژه با موفقیت پایان یافت!</b>\n\n"
                     f"🛠 شناسه: {project.id}\n"
-                    f"👤 مشتری: {project.customer.name}",
+                    f"👤 مشتری: {project.customer.name}\n\n"
+                    f"💰 مبلغ باقی‌مانده: {project.labor_cost - sum(p.amount for p in PaymentService.get_by_project(db, project_id)):,.0f} تومان",
                     parse_mode='HTML'
                 )
                 await ProjectHandler.view_project(update, context)
@@ -346,9 +388,8 @@ class ProjectHandler(BaseHandler):
             total_amount = 0.0
         
         context.user_data['total_amount'] = total_amount
-        context.user_data['labor_cost'] = total_amount  # Store as labor cost for now
+        context.user_data['labor_cost'] = total_amount
         
-        # Ask if they want to add parts
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ بله، قطعه دارم", callback_data="part_yes"),
@@ -372,19 +413,18 @@ class ProjectHandler(BaseHandler):
         await query.answer()
         
         if query.data == "part_yes":
-            # Save project first, then go to add part
-            await ProjectHandler.save_project(update, context)
-            
-            # Ask for part details
-            await BaseHandler.send_message(
-                update, context,
-                "🔩 لطفاً <b>نام قطعه</b> را وارد کنید:",
-                parse_mode='HTML'
-            )
-            # We'll handle this in part handler
-            return ConversationHandler.END
+            # Save project first
+            project_id = await ProjectHandler.save_project(update, context)
+            if project_id:
+                context.user_data['part_project_id'] = project_id
+                # Start part registration immediately
+                await BaseHandler.send_message(
+                    update, context,
+                    "🔩 <b>ثبت قطعه جدید</b>\n\nلطفاً <b>نام قطعه</b> را وارد کنید:",
+                    parse_mode='HTML'
+                )
+                return 20  # PART_NAME state
         else:
-            # Save project without parts
             await ProjectHandler.save_project(update, context)
             return ConversationHandler.END
     
@@ -400,7 +440,7 @@ class ProjectHandler(BaseHandler):
                     "❌ خطا: مشتری انتخاب نشده است.",
                     reply_markup=get_main_keyboard()
                 )
-                return
+                return None
             
             project = ProjectService.create(
                 db,
@@ -436,6 +476,7 @@ class ProjectHandler(BaseHandler):
             )
             
             logger.info(f"New project added: {project.id} - {project.customer.name}")
+            return project.id
             
         except Exception as e:
             logger.error(f"Error adding project: {e}")
@@ -443,10 +484,9 @@ class ProjectHandler(BaseHandler):
                 update, context,
                 f"❌ خطا در ثبت پروژه: {str(e)}"
             )
+            return None
         finally:
             db.close()
-        
-        context.user_data.clear()
     
     @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -458,95 +498,3 @@ class ProjectHandler(BaseHandler):
         )
         context.user_data.clear()
         return ConversationHandler.END
-
-    @staticmethod
-    async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Delete a project."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        
-        db = BaseHandler.get_db()
-        try:
-            project = ProjectService.get_by_id(db, project_id)
-            if not project:
-                await query.answer("❌ پروژه یافت نشد", True)
-                return
-            
-            if ProjectService.delete(db, project_id):
-                await query.answer("✅ پروژه حذف شد")
-                await BaseHandler.edit_message(
-                    update, context,
-                    f"✅ پروژه '{project.customer.name} - {project.project_type.value}' با موفقیت حذف شد.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
-                    ]),
-                    parse_mode='HTML'
-                )
-                logger.info(f"Project {project_id} deleted")
-            else:
-                await query.answer("❌ خطا در حذف پروژه", True)
-        finally:
-            db.close()
-    
-    @staticmethod
-    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start editing project."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        context.user_data['edit_project_id'] = project_id
-        
-        await query.answer()
-        await BaseHandler.edit_message(
-            update, context,
-            "✏️ <b>ویرایش پروژه</b>\n\n"
-            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
-            "(برای انصراف /cancel را بفرستید)",
-            parse_mode='HTML'
-        )
-        return PROJECT_EDIT_DESCRIPTION
-
-    @staticmethod
-    async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Delete a project."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        
-        db = BaseHandler.get_db()
-        try:
-            project = ProjectService.get_by_id(db, project_id)
-            if not project:
-                await query.answer("❌ پروژه یافت نشد", True)
-                return
-            
-            if ProjectService.delete(db, project_id):
-                await query.answer("✅ پروژه حذف شد")
-                await BaseHandler.edit_message(
-                    update, context,
-                    f"✅ پروژه '{project.customer.name} - {project.project_type.value}' با موفقیت حذف شد.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
-                    ]),
-                    parse_mode='HTML'
-                )
-                logger.info(f"Project {project_id} deleted")
-            else:
-                await query.answer("❌ خطا در حذف پروژه", True)
-        finally:
-            db.close()
-    
-    @staticmethod
-    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start editing project."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        context.user_data['edit_project_id'] = project_id
-        
-        await query.answer()
-        await BaseHandler.edit_message(
-            update, context,
-            "✏️ <b>ویرایش پروژه</b>\n\n"
-            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
-            "(برای انصراف /cancel را بفرستید)",
-            parse_mode='HTML'
-        )
-        return PROJECT_EDIT_DESCRIPTION

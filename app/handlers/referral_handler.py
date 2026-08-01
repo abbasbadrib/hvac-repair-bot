@@ -57,9 +57,13 @@ class ReferralHandler(BaseHandler):
         # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
-            project_id = int(query.data.split('_')[1])
-            context.user_data['referral_project_id'] = project_id
-            await query.answer()
+            data = query.data
+            if data.startswith("referral_"):
+                project_id = int(data.split('_')[1])
+                context.user_data['referral_project_id'] = project_id
+                await query.answer()
+            else:
+                await query.answer()
         else:
             # Called from main menu - show list of projects
             db = BaseHandler.get_db()
@@ -99,7 +103,15 @@ class ReferralHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            project_id = context.user_data['referral_project_id']
+            project_id = context.user_data.get('referral_project_id')
+            if not project_id:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ پروژه‌ای انتخاب نشده است.",
+                    reply_markup=get_main_keyboard()
+                )
+                return
+            
             referral = ReferralService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
             
@@ -141,30 +153,38 @@ class ReferralHandler(BaseHandler):
                 keyboard.append([InlineKeyboardButton("⚙ مدیریت معرفی‌کننده‌ها", callback_data="manage_referrers")])
                 keyboard.append([InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")])
                 
-                await BaseHandler.edit_message(
-                    update, context,
+                # Create message with proper formatting
+                message_text = (
                     f"🤝 <b>حق معرفی پروژه</b>\n\n"
                     f"👤 مشتری: {project.customer.name}\n"
-                    f"💰 مبلغ کل پروژه: {project.labor_cost:,.0f} تومان\n\n"
-                    "لطفاً معرفی‌کننده را انتخاب کنید:",
+                    f"💰 مبلغ کل: {project.labor_cost:,.0f} تومان\n\n"
+                    "لطفاً معرفی‌کننده را انتخاب کنید:"
+                )
+                
+                await BaseHandler.edit_message(
+                    update, context,
+                    message_text,
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode='HTML'
                 )
                 return
             
-            # Show referral details with amounts
-            text = (
+            # Show referral details with amounts and settlement info
+            message_text = (
                 f"🤝 <b>اطلاعات حق معرفی</b>\n\n"
                 f"👤 مشتری: {project.customer.name}\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
-                f"💰 سود خالص پروژه: {financials.net_profit:,.0f} تومان\n"
-                f"💵 مبلغ حق معرفی: {referral.amount:,.0f} تومان\n"
-                f"💰 سود پس از کسر حق معرفی: {financials.net_profit - referral.amount:,.0f} تومان\n\n"
+                f"💰 مبلغ کل: {project.labor_cost:,.0f} تومان\n"
+                f"🔩 سود قطعات: {financials.total_parts_profit:,.0f} تومان\n"
+                f"💳 هزینه‌ها: {financials.total_expenses:,.0f} تومان\n"
+                f"📊 سود ناخالص: {financials.gross_profit:,.0f} تومان\n"
+                f"💰 سود خالص: {financials.net_profit:,.0f} تومان\n"
+                f"💵 مبلغ حق معرفی: {referral.amount:,.0f} تومان\n\n"
                 f"📊 <b>تقسیم سود</b>:\n"
                 f"👤 سهم من: {financials.my_share:,.0f} تومان\n"
-                f"👥 سهم شریک: {financials.partner_share:,.0f} تومان\n"
-                f"🤝 مبلغ قابل پرداخت به معرفی‌کننده: {referral.amount:,.0f} تومان"
+                f"👥 سهم شریک: {financials.partner_share:,.0f} تومان\n\n"
+                f"🤝 <b>مبلغ قابل پرداخت به {referral.referrer_name}</b>: {referral.amount:,.0f} تومان"
             )
             
             keyboard = [
@@ -177,7 +197,7 @@ class ReferralHandler(BaseHandler):
             
             await BaseHandler.edit_message(
                 update, context,
-                text,
+                message_text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='HTML'
             )
@@ -229,7 +249,7 @@ class ReferralHandler(BaseHandler):
                 total_payments=total_payments
             )
             
-            text = (
+            message_text = (
                 f"✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
@@ -243,7 +263,7 @@ class ReferralHandler(BaseHandler):
             
             await BaseHandler.edit_message(
                 update, context,
-                text,
+                message_text,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
                 ]),
@@ -396,7 +416,7 @@ class ReferralHandler(BaseHandler):
                 total_payments=total_payments
             )
             
-            text = (
+            message_text = (
                 f"✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
@@ -409,11 +429,11 @@ class ReferralHandler(BaseHandler):
             )
             
             if auto:
-                text += f"\n🔹 درصد {percentage}% به‌طور خودکار برای '{name}' تنظیم شد."
+                message_text += f"\n🔹 درصد {percentage}% به‌طور خودکار برای '{name}' تنظیم شد."
             
             await BaseHandler.send_message(
                 update, context,
-                text,
+                message_text,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
                 ]),

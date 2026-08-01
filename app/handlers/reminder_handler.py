@@ -1,50 +1,41 @@
 """
-Reminder management handlers - برای یادآوری تسویه و پیگیری پروژه‌ها
+Reminder management handlers.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes
 from app.handlers.base_handler import BaseHandler
 from app.services.project_service import ProjectService
 from app.services.payment_service import PaymentService
-from app.services.customer_service import CustomerService
 from app.models.project import ProjectStatus
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-# Conversation states
-REMINDER_TYPE, REMINDER_INTERVAL, REMINDER_TIME = range(3)
 
 class ReminderHandler(BaseHandler):
     """Handler for reminder operations."""
     
-    REMINDER_TYPE = REMINDER_TYPE
-    REMINDER_INTERVAL = REMINDER_INTERVAL
-    REMINDER_TIME = REMINDER_TIME
-    
     @staticmethod
     async def show_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show reminder options."""
-        # Check if called from main menu or callback
         if update.callback_query:
             await update.callback_query.answer()
         
         keyboard = [
             [InlineKeyboardButton("💰 یادآوری تسویه", callback_data="reminder_settlement")],
             [InlineKeyboardButton("🛠 یادآوری پیگیری پروژه", callback_data="reminder_followup")],
-            [InlineKeyboardButton("📋 لیست پروژه‌های نیازمند پیگیری", callback_data="reminder_list")],
+            [InlineKeyboardButton("📋 لیست همه پروژه‌ها", callback_data="reminder_all")],
             [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
         ]
         
         await BaseHandler.send_message(
             update, context,
             "⏰ <b>یادآوری</b>\n\n"
-            "• <b>یادآوری تسویه</b>: برای پروژه‌هایی که بدهی دارند\n"
-            "• <b>یادآوری پیگیری</b>: برای پروژه‌های ناتمام\n"
-            "• <b>لیست پروژه‌ها</b>: مشاهده پروژه‌های نیازمند پیگیری\n\n"
+            "• <b>یادآوری تسویه</b>: پروژه‌های تکمیل شده با بدهی\n"
+            "• <b>یادآوری پیگیری</b>: پروژه‌های در حال انجام\n"
+            "• <b>لیست همه پروژه‌ها</b>: مشاهده همه پروژه‌ها\n\n"
             "لطفاً نوع یادآوری را انتخاب کنید:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
@@ -52,23 +43,26 @@ class ReminderHandler(BaseHandler):
     
     @staticmethod
     async def show_settlement_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show projects with debt."""
+        """Show projects with debt (completed + in progress)."""
         query = update.callback_query
         await query.answer()
         
         db = BaseHandler.get_db()
         try:
-            projects = ProjectService.get_all(db)
+            all_projects = ProjectService.get_all(db)
             debt_projects = []
             
-            for project in projects:
-                if project.status == ProjectStatus.COMPLETED:
+            for project in all_projects:
+                # پروژه‌های تکمیل شده یا در حال انجام که بدهی دارند
+                if project.status in [ProjectStatus.COMPLETED, ProjectStatus.IN_PROGRESS]:
                     payments = PaymentService.get_by_project(db, project.id)
                     total_payments = sum(p.amount for p in payments)
-                    if total_payments < project.labor_cost:
+                    debt = project.labor_cost - total_payments
+                    if debt > 0:
                         debt_projects.append({
                             'project': project,
-                            'debt': project.labor_cost - total_payments
+                            'debt': debt,
+                            'status': project.status
                         })
             
             if not debt_projects:
@@ -86,8 +80,10 @@ class ReminderHandler(BaseHandler):
             text = "💰 <b>پروژه‌های نیازمند تسویه</b>\n\n"
             for item in debt_projects:
                 p = item['project']
+                status_text = "✅ تکمیل شده" if item['status'] == ProjectStatus.COMPLETED else "🟢 در حال انجام"
                 text += f"👤 {p.customer.name}\n"
                 text += f"   🛠 {p.project_type.value} - {p.service_type}\n"
+                text += f"   📊 وضعیت: {status_text}\n"
                 text += f"   💰 بدهی: {item['debt']:,.0f} تومان\n"
                 text += f"   📅 {p.start_date.strftime('%Y-%m-%d')}\n\n"
             
@@ -148,8 +144,49 @@ class ReminderHandler(BaseHandler):
             db.close()
     
     @staticmethod
+    async def show_all_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show all projects."""
+        query = update.callback_query
+        await query.answer()
+        
+        db = BaseHandler.get_db()
+        try:
+            projects = ProjectService.get_all(db)
+            
+            if not projects:
+                await BaseHandler.edit_message(
+                    update, context,
+                    "📋 <b>لیست پروژه‌ها</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                return
+            
+            text = "📋 <b>لیست همه پروژه‌ها</b>\n\n"
+            for project in projects:
+                status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅" if project.status == ProjectStatus.COMPLETED else "❌"
+                text += f"{status_emoji} {project.customer.name} - {project.project_type.value}\n"
+                text += f"   📅 {project.start_date.strftime('%Y-%m-%d')}\n"
+                text += f"   📝 {project.description or 'بدون توضیح'}\n\n"
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+            ]
+            
+            await BaseHandler.edit_message(
+                update, context,
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+        finally:
+            db.close()
+    
+    @staticmethod
     async def set_reminder_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Set reminder time (for future implementation)."""
+        """Set reminder time."""
         query = update.callback_query
         await query.answer("⏳ این قابلیت به زودی اضافه می‌شود")
         
@@ -183,4 +220,3 @@ class ReminderHandler(BaseHandler):
             reply_markup=get_main_keyboard()
         )
         context.user_data.clear()
-        return ConversationHandler.END

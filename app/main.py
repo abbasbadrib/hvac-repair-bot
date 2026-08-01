@@ -44,9 +44,12 @@ def create_tables():
 def setup_handlers(application: Application):
     """Register all handlers."""
     
-    # Start and Help
+    # Command handlers
     application.add_handler(CommandHandler("start", StartHandler.start))
     application.add_handler(CommandHandler("help", StartHandler.help_command))
+    application.add_handler(CommandHandler("cancel", StartHandler.cancel))
+    application.add_handler(CommandHandler("menu", StartHandler.start))
+    application.add_handler(CommandHandler("stats", ReportHandler.show_statistics))
     
     # Customer Conversation Handler
     customer_conv = ConversationHandler(
@@ -214,6 +217,7 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^reminder_menu$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_settlement_reminders, pattern="^reminder_settlement$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_followup_reminders, pattern="^reminder_followup$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_all_projects, pattern="^reminder_all$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.set_reminder_time, pattern="^reminder_settime$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.back_to_menu, pattern="^reminder_back$"))
     

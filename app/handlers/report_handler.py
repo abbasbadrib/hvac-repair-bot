@@ -55,7 +55,6 @@ class ReportHandler(BaseHandler):
         query = update.callback_query
         await query.answer()
         
-        # Show filter options
         keyboard = [
             [InlineKeyboardButton("📊 کل", callback_data="stats_all")],
             [InlineKeyboardButton("📅 هفتگی", callback_data="stats_weekly")],
@@ -80,7 +79,6 @@ class ReportHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            # Determine date range
             today = date.today()
             if period == "weekly":
                 start_date = today - timedelta(days=today.weekday())
@@ -88,15 +86,16 @@ class ReportHandler(BaseHandler):
                 start_date = date(today.year, today.month, 1)
             elif period == "yearly":
                 start_date = date(today.year, 1, 1)
-            else:  # all
+            else:
                 start_date = datetime(2000, 1, 1).date()
             
-            # Get all projects in range
             all_projects = ProjectService.get_all(db)
             filtered_projects = [p for p in all_projects if p.start_date.date() >= start_date]
             
+            period_names = {"all": "همه", "weekly": "هفتگی", "monthly": "ماهانه", "yearly": "سالانه"}
+            
             if not filtered_projects:
-                text = f"📊 <b>آمار کل</b>\n\n❌ هیچ پروژه‌ای در این بازه زمانی یافت نشد."
+                text = f"📊 <b>آمار {period_names.get(period, 'کل')}</b>\n\n❌ هیچ پروژه‌ای در این بازه زمانی یافت نشد."
                 keyboard = [
                     [InlineKeyboardButton("🔙 بازگشت به آمار", callback_data="statistics")],
                     [InlineKeyboardButton("🔙 بازگشت به گزارش‌ها", callback_data="report_menu")]
@@ -109,7 +108,6 @@ class ReportHandler(BaseHandler):
                 )
                 return
             
-            # Calculate statistics
             total_projects = len(filtered_projects)
             completed_projects = [p for p in filtered_projects if p.status == ProjectStatus.COMPLETED]
             total_completed = len(completed_projects)
@@ -142,13 +140,6 @@ class ReportHandler(BaseHandler):
                     total_referral_amount += referral.amount
                 total_income += financials.total_income
                 total_expenses += financials.total_expenses
-            
-            period_names = {
-                "all": "همه",
-                "weekly": "هفتگی",
-                "monthly": "ماهانه",
-                "yearly": "سالانه"
-            }
             
             text = (
                 f"📊 <b>آمار {period_names.get(period, 'کل')}</b>\n\n"
@@ -190,7 +181,6 @@ class ReportHandler(BaseHandler):
     @staticmethod
     async def show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show dashboard."""
-        # استفاده از dashboard_handler موجود
         from app.handlers.dashboard_handler import DashboardHandler
         await DashboardHandler.show_dashboard_button(update, context)
     

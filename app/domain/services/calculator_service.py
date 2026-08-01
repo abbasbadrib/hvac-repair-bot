@@ -39,14 +39,6 @@ class CalculatorService:
     ) -> FinancialResult:
         """
         Calculate all financial metrics for a project.
-        
-        Args:
-            total_amount_from_customer: کل مبلغ دریافتی از مشتری
-            parts: لیست قطعات
-            expenses: لیست هزینه‌ها
-            referral_percentage: درصد حق معرفی
-            referral_name: نام معرفی کننده
-            total_payments: مجموع پرداخت‌ها
         """
         if parts is None:
             parts = []
