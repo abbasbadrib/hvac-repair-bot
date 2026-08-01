@@ -4,7 +4,6 @@ Financial calculation service.
 
 from dataclasses import dataclass
 from typing import List, Optional
-from decimal import Decimal, ROUND_HALF_UP
 
 @dataclass
 class FinancialResult:
@@ -30,40 +29,55 @@ class CalculatorService:
     
     @staticmethod
     def calculate_project_financials(
-        parts_profit: float,
-        labor_cost: float,
-        expenses: List,
+        total_amount_from_customer: float,
+        parts_profit: float = 0,
+        expenses: List = None,
         referral_percentage: float = 0,
         referral_name: str = "",
         total_payments: float = 0
     ) -> FinancialResult:
-        """Calculate all financial metrics for a project."""
+        """
+        Calculate all financial metrics for a project.
         
-        # Total income
-        total_income = parts_profit + labor_cost
+        Args:
+            total_amount_from_customer: کل مبلغ دریافتی از مشتری
+            parts_profit: سود قطعات
+            expenses: لیست هزینه‌ها
+            referral_percentage: درصد حق معرفی
+            referral_name: نام معرفی کننده
+            total_payments: مجموع پرداخت‌ها
+        """
+        if expenses is None:
+            expenses = []
         
-        # Expenses breakdown
+        # درآمد کل = مبلغ دریافتی از مشتری
+        total_income = total_amount_from_customer
+        
+        # اجرت = درآمد کل - سود قطعات
+        labor_cost = total_income - parts_profit
+        
+        # هزینه‌ها
         total_expenses = sum(e.amount for e in expenses)
         expenses_paid_by_me = sum(e.amount for e in expenses if e.paid_by == "ME")
         expenses_paid_by_partner = sum(e.amount for e in expenses if e.paid_by == "PARTNER")
         
-        # Gross profit (income - expenses)
+        # سود ناخالص = درآمد کل - هزینه‌ها
         gross_profit = total_income - total_expenses
         
-        # Referral amount (calculated from gross profit)
-        referral_amount = (referral_percentage / 100) * gross_profit
+        # حق معرفی = سود ناخالص × درصد
+        referral_amount = gross_profit * (referral_percentage / 100)
         
-        # Net profit (gross profit - referral)
+        # سود خالص = سود ناخالص - حق معرفی
         net_profit = gross_profit - referral_amount
         
-        # Split 50/50
+        # تقسیم سود ۵۰/۵۰
         base_share = net_profit / 2
         
-        # Adjust for expenses paid by each partner
+        # تعدیل با هزینه‌های پرداخت شده توسط هر نفر
         my_share = base_share - expenses_paid_by_me
         partner_share = base_share - expenses_paid_by_partner
         
-        # Calculate debts
+        # محاسبه بدهی‌ها
         customer_debt = max(0, total_income - total_payments)
         my_debt = my_share + expenses_paid_by_me
         

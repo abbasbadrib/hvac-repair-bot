@@ -104,10 +104,10 @@ class ProjectHandler(BaseHandler):
             # Get referral
             referral = ReferralService.get_by_project(db, project_id)
             
-            # Calculate financials
+            # Calculate financials - با منطق جدید
             financials = CalculatorService.calculate_project_financials(
+                total_amount_from_customer=project.labor_cost,  # مبلغ کل دریافتی از مشتری
                 parts_profit=total_parts_profit,
-                labor_cost=project.labor_cost,
                 expenses=expenses,
                 referral_percentage=referral.percentage if referral else 0,
                 referral_name=referral.referrer_name if referral else "",
@@ -123,7 +123,7 @@ class ProjectHandler(BaseHandler):
                 f"❄️ <b>نوع</b>: {project.project_type.value}\n"
                 f"🛠 <b>نوع سرویس</b>: {project.service_type}\n"
                 f"{status_emoji} <b>وضعیت</b>: {project.status.value}\n"
-                f"💰 <b>اجرت</b>: {project.labor_cost:,.0f} تومان\n"
+                f"💰 <b>مبلغ دریافت‌شده</b>: {project.labor_cost:,.0f} تومان\n"
                 f"📅 <b>تاریخ شروع</b>: {project.start_date.strftime('%Y-%m-%d')}\n\n"
                 f"📊 <b>محاسبات مالی</b>:\n"
                 f"🔩 <b>سود قطعات</b>: {financials.total_parts_profit:,.0f} تومان\n"
