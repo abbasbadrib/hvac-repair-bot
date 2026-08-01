@@ -11,6 +11,7 @@ from app.services.part_service import PartService
 from app.services.expense_service import ExpenseService
 from app.services.payment_service import PaymentService
 from app.domain.services.calculator_service import CalculatorService
+from app.models.project import ProjectStatus
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 import json
