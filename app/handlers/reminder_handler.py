@@ -1,206 +1,186 @@
 """
-Reminder management handlers.
+Reminder management handlers - برای یادآوری تسویه و پیگیری پروژه‌ها
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base_handler import BaseHandler
-from app.services.reminder_service import ReminderService
 from app.services.project_service import ProjectService
-from app.models.reminder import ReminderInterval
+from app.services.payment_service import PaymentService
+from app.services.customer_service import CustomerService
+from app.models.project import ProjectStatus
+from app.keyboards.main_keyboard import get_main_keyboard
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 # Conversation states
-REMINDER_INTERVAL, REMINDER_DATE = range(2)
+REMINDER_TYPE, REMINDER_INTERVAL, REMINDER_TIME = range(3)
 
 class ReminderHandler(BaseHandler):
     """Handler for reminder operations."""
     
-    # Expose states for main.py
+    REMINDER_TYPE = REMINDER_TYPE
     REMINDER_INTERVAL = REMINDER_INTERVAL
-    REMINDER_DATE = REMINDER_DATE
+    REMINDER_TIME = REMINDER_TIME
     
     @staticmethod
     async def show_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show reminders for a project."""
-        query = update.callback_query
-        if query:
-            project_id = int(query.data.split('_')[1])
-            context.user_data['reminder_project_id'] = project_id
-            await query.answer()
-        else:
-            await BaseHandler.send_message(
-                update, context,
-                "⏰ لطفاً ابتدا یک پروژه را انتخاب کنید.",
-                reply_markup=get_main_keyboard()
-            )
-            return
+        """Show reminder options."""
+        # Check if called from main menu or callback
+        if update.callback_query:
+            await update.callback_query.answer()
         
-        db = BaseHandler.get_db()
-        try:
-            project_id = context.user_data['reminder_project_id']
-            reminders = ReminderService.get_by_project(db, project_id)
-            project = ProjectService.get_by_id(db, project_id)
-            
-            if not reminders:
-                text = f"⏰ <b>یادآوری‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ یادآوری ثبت نشده است."
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ ثبت یادآوری جدید", callback_data=f"add_reminder_{project_id}")],
-                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-                ])
-                await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
-                return
-            
-            text = f"⏰ <b>یادآوری‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
-            for reminder in reminders:
-                status = "✅ ارسال شده" if reminder.is_sent else "⏳ در انتظار"
-                text += f"📅 {reminder.interval.value}\n   تاریخ: {reminder.reminder_date.strftime('%Y-%m-%d %H:%M')}\n   وضعیت: {status}\n\n"
-            
-            keyboard = [
-                [InlineKeyboardButton("➕ ثبت یادآوری جدید", callback_data=f"add_reminder_{project_id}")],
-                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-            ]
-            
-            await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-        finally:
-            db.close()
-    
-    @staticmethod
-    async def add_reminder_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start adding a new reminder."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        context.user_data['reminder_project_id'] = project_id
+        keyboard = [
+            [InlineKeyboardButton("💰 یادآوری تسویه", callback_data="reminder_settlement")],
+            [InlineKeyboardButton("🛠 یادآوری پیگیری پروژه", callback_data="reminder_followup")],
+            [InlineKeyboardButton("📋 لیست پروژه‌های نیازمند پیگیری", callback_data="reminder_list")],
+            [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+        ]
         
-        # Show interval selection
-        keyboard = []
-        for interval in ReminderInterval:
-            keyboard.append([
-                InlineKeyboardButton(interval.value, callback_data=f"rem_interval_{project_id}_{interval.value}")
-            ])
-        keyboard.append([InlineKeyboardButton("🔙 انصراف", callback_data="cancel_reminder")])
-        
-        await query.answer()
-        await BaseHandler.edit_message(
+        await BaseHandler.send_message(
             update, context,
-            "⏰ <b>ثبت یادآوری جدید</b>\n\nلطفاً <b>بازه زمانی</b> یادآوری را انتخاب کنید:",
+            "⏰ <b>یادآوری</b>\n\n"
+            "• <b>یادآوری تسویه</b>: برای پروژه‌هایی که بدهی دارند\n"
+            "• <b>یادآوری پیگیری</b>: برای پروژه‌های ناتمام\n"
+            "• <b>لیست پروژه‌ها</b>: مشاهده پروژه‌های نیازمند پیگیری\n\n"
+            "لطفاً نوع یادآوری را انتخاب کنید:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
-        return REMINDER_INTERVAL
     
     @staticmethod
-    async def add_reminder_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get reminder interval."""
+    async def show_settlement_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show projects with debt."""
         query = update.callback_query
-        parts = query.data.split('_')
-        interval_value = parts[3]
+        await query.answer()
         
-        # Find the interval enum
-        interval = None
-        for rem_interval in ReminderInterval:
-            if rem_interval.value == interval_value:
-                interval = rem_interval
-                break
-        
-        if not interval:
-            await query.answer("❌ بازه نامعتبر", True)
-            return REMINDER_INTERVAL
-        
-        context.user_data['reminder_interval'] = interval
-        
-        # Get project start date or use current date
         db = BaseHandler.get_db()
         try:
-            project = ProjectService.get_by_id(db, context.user_data['reminder_project_id'])
-            if project and project.start_date:
-                start_date = project.start_date
-            else:
-                start_date = datetime.utcnow()
+            projects = ProjectService.get_all(db)
+            debt_projects = []
             
-            # Calculate reminder date
-            reminder_date = ReminderService.calculate_reminder_date(start_date, interval)
-            context.user_data['reminder_date'] = reminder_date
+            for project in projects:
+                if project.status == ProjectStatus.COMPLETED:
+                    payments = PaymentService.get_by_project(db, project.id)
+                    total_payments = sum(p.amount for p in payments)
+                    if total_payments < project.labor_cost:
+                        debt_projects.append({
+                            'project': project,
+                            'debt': project.labor_cost - total_payments
+                        })
             
-            await query.answer()
-            await BaseHandler.edit_message(
-                update, context,
-                f"⏰ <b>یادآوری {interval.value}</b>\n\n📅 تاریخ یادآوری: {reminder_date.strftime('%Y-%m-%d %H:%M')}\n\n"
-                "آیا از این تاریخ مطمئن هستید؟\n"
-                "برای تغییر تاریخ، عدد مورد نظر را وارد کنید (مثلاً 2024-12-31)\n"
-                "برای تایید، '.' را وارد کنید.",
-                parse_mode='HTML'
-            )
-            return REMINDER_DATE
-        finally:
-            db.close()
-    
-    @staticmethod
-    async def add_reminder_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get reminder date and save."""
-        text = update.message.text.strip()
-        
-        if text != '.':
-            # Try to parse custom date
-            try:
-                reminder_date = datetime.strptime(text, '%Y-%m-%d')
-                context.user_data['reminder_date'] = reminder_date
-            except ValueError:
-                await BaseHandler.send_message(
+            if not debt_projects:
+                await BaseHandler.edit_message(
                     update, context,
-                    "❌ تاریخ نامعتبر است. فرمت صحیح: YYYY-MM-DD\nمثال: 2024-12-31",
+                    "💰 <b>یادآوری تسویه</b>\n\n"
+                    "✅ هیچ پروژه‌ای با بدهی باقی‌مانده وجود ندارد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+                    ]),
                     parse_mode='HTML'
                 )
-                return REMINDER_DATE
-        
-        # Save reminder
-        db = BaseHandler.get_db()
-        try:
-            project_id = context.user_data['reminder_project_id']
-            reminder_date = context.user_data['reminder_date']
-            interval = context.user_data['reminder_interval']
+                return
             
-            reminder = ReminderService.create(
-                db,
-                project_id=project_id,
-                interval=interval,
-                reminder_date=reminder_date
-            )
+            text = "💰 <b>پروژه‌های نیازمند تسویه</b>\n\n"
+            for item in debt_projects:
+                p = item['project']
+                text += f"👤 {p.customer.name}\n"
+                text += f"   🛠 {p.project_type.value} - {p.service_type}\n"
+                text += f"   💰 بدهی: {item['debt']:,.0f} تومان\n"
+                text += f"   📅 {p.start_date.strftime('%Y-%m-%d')}\n\n"
             
-            text = (
-                f"✅ <b>یادآوری با موفقیت ثبت شد!</b>\n\n"
-                f"⏰ بازه: {reminder.interval.value}\n"
-                f"📅 تاریخ: {reminder.reminder_date.strftime('%Y-%m-%d %H:%M')}"
-            )
+            keyboard = [
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+            ]
             
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-            ])
-            
-            await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
-            logger.info(f"New reminder added for project {project_id}")
-            
-        except Exception as e:
-            logger.error(f"Error adding reminder: {e}")
-            await BaseHandler.send_message(
+            await BaseHandler.edit_message(
                 update, context,
-                f"❌ خطا در ثبت یادآوری: {str(e)}"
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
             )
         finally:
             db.close()
+    
+    @staticmethod
+    async def show_followup_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show incomplete projects."""
+        query = update.callback_query
+        await query.answer()
         
-        context.user_data.clear()
-        return ConversationHandler.END
+        db = BaseHandler.get_db()
+        try:
+            projects = ProjectService.get_by_status(db, ProjectStatus.IN_PROGRESS)
+            
+            if not projects:
+                await BaseHandler.edit_message(
+                    update, context,
+                    "🛠 <b>یادآوری پیگیری پروژه</b>\n\n"
+                    "✅ هیچ پروژه ناتمامی وجود ندارد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                return
+            
+            text = "🛠 <b>پروژه‌های در حال انجام</b>\n\n"
+            for project in projects:
+                days = (datetime.utcnow() - project.start_date).days
+                text += f"👤 {project.customer.name}\n"
+                text += f"   🛠 {project.project_type.value} - {project.service_type}\n"
+                text += f"   📅 {days} روز از شروع گذشته\n"
+                text += f"   📝 {project.description or 'بدون توضیح'}\n\n"
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+            ]
+            
+            await BaseHandler.edit_message(
+                update, context,
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def set_reminder_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Set reminder time (for future implementation)."""
+        query = update.callback_query
+        await query.answer("⏳ این قابلیت به زودی اضافه می‌شود")
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "⏰ <b>تنظیم یادآوری</b>\n\n"
+            "این قابلیت به شما امکان می‌دهد:\n"
+            "• یادآوری روزانه در ساعت مشخص\n"
+            "• یادآوری هر چند روز یکبار\n"
+            "• یادآوری هفتگی\n\n"
+            "🔜 به زودی اضافه می‌شود.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="reminder_menu")]
+            ]),
+            parse_mode='HTML'
+        )
+    
+    @staticmethod
+    async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Back to reminder menu."""
+        query = update.callback_query
+        await query.answer()
+        await ReminderHandler.show_reminders(update, context)
     
     @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Cancel the conversation."""
+        """Cancel operation."""
         await BaseHandler.send_message(
             update, context,
-            "❌ عملیات لغو شد."
+            "❌ عملیات لغو شد.",
+            reply_markup=get_main_keyboard()
         )
         context.user_data.clear()
         return ConversationHandler.END
