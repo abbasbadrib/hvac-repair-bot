@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class StartHandler(BaseHandler):
-    """Handler for /start command."""
+    """Handler for start and related commands."""
     
     @staticmethod
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,4 +60,16 @@ class StartHandler(BaseHandler):
             help_text,
             reply_markup=get_main_keyboard(),
             parse_mode='HTML'
+        )
+    
+    @staticmethod
+    async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /cancel command - cancel current operation."""
+        # Clear user data
+        context.user_data.clear()
+        await BaseHandler.send_message(
+            update, context,
+            "❌ عملیات جاری لغو شد.\n\n"
+            "از منوی اصلی می‌توانید عملیات جدید را شروع کنید.",
+            reply_markup=get_main_keyboard()
         )
