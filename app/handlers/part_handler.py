@@ -27,11 +27,6 @@ class PartHandler(BaseHandler):
     @staticmethod
     async def show_parts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show parts for a project."""
-        # Check if we're in a conversation
-        if context.user_data.get('in_part_conversation'):
-            await PartHandler.cancel(update, context)
-            return
-        
         query = update.callback_query
         if query:
             project_id = int(query.data.split('_')[1])
@@ -84,7 +79,6 @@ class PartHandler(BaseHandler):
         query = update.callback_query
         project_id = int(query.data.split('_')[2])
         context.user_data['part_project_id'] = project_id
-        context.user_data['in_part_conversation'] = True
         
         await query.answer()
         await BaseHandler.edit_message(
@@ -206,6 +200,7 @@ class PartHandler(BaseHandler):
         finally:
             db.close()
         
+        # Clear user data and end conversation
         context.user_data.clear()
         return ConversationHandler.END
     
