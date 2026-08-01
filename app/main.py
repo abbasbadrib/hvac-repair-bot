@@ -5,7 +5,14 @@ Main application entry point for HVAC Repair Bot.
 import logging
 import threading
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    CallbackQueryHandler, 
+    MessageHandler, 
+    filters, 
+    ConversationHandler
+)
 from app.core.config import Config
 from app.core.database import Base, engine
 from app.utils.logger import setup_logger
@@ -40,6 +47,61 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("start", StartHandler.start))
     application.add_handler(CommandHandler("help", StartHandler.help_command))
     
+    # Customer Conversation Handler
+    customer_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(CustomerHandler.add_customer_start, pattern="^add_customer$")
+        ],
+        states={
+            CustomerHandler.NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, CustomerHandler.add_customer_name)
+            ],
+            CustomerHandler.PHONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, CustomerHandler.add_customer_phone)
+            ],
+            CustomerHandler.ADDRESS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, CustomerHandler.add_customer_address)
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", CustomerHandler.cancel),
+            MessageHandler(filters.Regex("^🏠 خانه$"), CustomerHandler.cancel),
+            MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.cancel)
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(customer_conv)
+    
+    # Project Conversation Handler (به‌طور مشابه برای پروژه‌ها)
+    project_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(ProjectHandler.add_project_start, pattern="^add_project")
+        ],
+        states={
+            ProjectHandler.PROJECT_CUSTOMER: [
+                CallbackQueryHandler(ProjectHandler.add_project_customer, pattern="^project_customer_")
+            ],
+            ProjectHandler.PROJECT_TYPE: [
+                CallbackQueryHandler(ProjectHandler.add_project_type, pattern="^project_type_")
+            ],
+            ProjectHandler.PROJECT_SERVICE: [
+                CallbackQueryHandler(ProjectHandler.add_project_service, pattern="^service_")
+            ],
+            ProjectHandler.PROJECT_DESCRIPTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ProjectHandler.add_project_description)
+            ],
+            ProjectHandler.PROJECT_LABOR: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ProjectHandler.add_project_labor)
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", ProjectHandler.cancel),
+            CallbackQueryHandler(ProjectHandler.cancel, pattern="^cancel_project$")
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(project_conv)
+    
     # Main menu handlers
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
@@ -54,11 +116,9 @@ def setup_handlers(application: Application):
     # Callback handlers
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^back_home$"))
     application.add_handler(CallbackQueryHandler(CustomerHandler.view_customer, pattern="^view_customer_"))
-    application.add_handler(CallbackQueryHandler(CustomerHandler.add_customer_start, pattern="^add_customer$"))
     application.add_handler(CallbackQueryHandler(CustomerHandler.show_customers, pattern="^list_customers$"))
     
     application.add_handler(CallbackQueryHandler(ProjectHandler.view_project, pattern="^view_project_"))
-    application.add_handler(CallbackQueryHandler(ProjectHandler.add_project_start, pattern="^add_project"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^list_projects$"))
     
     application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^parts_"))
@@ -94,7 +154,7 @@ def main():
     try:
         logger.info("🚀 Starting HVAC Repair Bot...")
         
-        # Start health check server in background
+        # Start health check server
         health_thread = threading.Thread(
             target=start_health_server,
             args=(8080,),
