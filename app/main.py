@@ -209,25 +209,13 @@ def setup_handlers(application: Application):
     )
     application.add_handler(referral_conv)
     
-    # Reminder Conversation Handler
-    reminder_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(ReminderHandler.add_reminder_start, pattern="^add_reminder_")
-        ],
-        states={
-            ReminderHandler.REMINDER_INTERVAL: [
-                CallbackQueryHandler(ReminderHandler.add_reminder_interval, pattern="^rem_interval_")
-            ],
-            ReminderHandler.REMINDER_DATE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ReminderHandler.add_reminder_date)
-            ],
-        },
-        fallbacks=[
-            CommandHandler("cancel", ReminderHandler.cancel)
-        ],
-        allow_reentry=True
-    )
-    application.add_handler(reminder_conv)
+    # Reminder - بدون ConversationHandler، فقط دکمه‌ها
+    application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^reminder_menu$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_settlement_reminders, pattern="^reminder_settlement$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_followup_reminders, pattern="^reminder_followup$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.set_reminder_time, pattern="^reminder_settime$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.back_to_menu, pattern="^reminder_back$"))
     
     # Main menu handlers
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
@@ -239,7 +227,6 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^👥 شریک$"), PartnerHandler.show_partner_info))
     application.add_handler(MessageHandler(filters.Regex("^🤝 حق معرفی$"), ReferralHandler.show_referral))
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
-    application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     
     # Callback handlers
@@ -275,9 +262,6 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ReferralHandler.add_referrer, pattern="^add_referrer$"))
     application.add_handler(CallbackQueryHandler(ReferralHandler.show_referral, pattern="^back_to_referral$"))
     application.add_handler(CallbackQueryHandler(ReferralHandler.delete_referral, pattern="^delete_referral_"))
-    
-    # Reminder callbacks
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^reminder_"))
     
     # Report callbacks
     application.add_handler(CallbackQueryHandler(ReportHandler.show_report_menu, pattern="^report_menu$"))
