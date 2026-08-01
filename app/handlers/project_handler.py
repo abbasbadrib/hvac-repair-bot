@@ -7,6 +7,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base_handler import BaseHandler
 from app.services.project_service import ProjectService
 from app.services.customer_service import CustomerService
+from app.services.part_service import PartService
+from app.services.expense_service import ExpenseService
+from app.services.payment_service import PaymentService
+from app.services.referral_service import ReferralService
 from app.domain.services.calculator_service import CalculatorService
 from app.models.project import ProjectType, ProjectStatus
 from app.keyboards.project_keyboards import get_project_keyboard, get_project_type_keyboard
@@ -85,6 +89,30 @@ class ProjectHandler(BaseHandler):
                 await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
                 return
             
+            # Get all parts and calculate profit
+            parts = PartService.get_by_project(db, project_id)
+            total_parts_profit = sum(p.profit for p in parts)
+            
+            # Get expenses
+            expenses = ExpenseService.get_by_project(db, project_id)
+            
+            # Get payments
+            payments = PaymentService.get_by_project(db, project_id)
+            total_payments = sum(p.amount for p in payments)
+            
+            # Get referral
+            referral = ReferralService.get_by_project(db, project_id)
+            
+            # Calculate financials
+            financials = CalculatorService.calculate_project_financials(
+                parts_profit=total_parts_profit,
+                labor_cost=project.labor_cost,
+                expenses=expenses,
+                referral_percentage=referral.percentage if referral else 0,
+                referral_name=referral.referrer_name if referral else "",
+                total_payments=total_payments
+            )
+            
             status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅" if project.status == ProjectStatus.COMPLETED else "❌"
             
             text = (
@@ -95,7 +123,19 @@ class ProjectHandler(BaseHandler):
                 f"🛠 <b>نوع سرویس</b>: {project.service_type}\n"
                 f"{status_emoji} <b>وضعیت</b>: {project.status.value}\n"
                 f"💰 <b>اجرت</b>: {project.labor_cost:,.0f} تومان\n"
-                f"📅 <b>تاریخ شروع</b>: {project.start_date.strftime('%Y-%m-%d')}"
+                f"📅 <b>تاریخ شروع</b>: {project.start_date.strftime('%Y-%m-%d')}\n\n"
+                f"📊 <b>محاسبات مالی</b>:\n"
+                f"🔩 <b>سود قطعات</b>: {financials.total_parts_profit:,.0f} تومان\n"
+                f"💰 <b>اجرت</b>: {financials.labor_cost:,.0f} تومان\n"
+                f"📈 <b>درآمد کل</b>: {financials.total_income:,.0f} تومان\n"
+                f"💳 <b>هزینه‌ها</b>: {financials.total_expenses:,.0f} تومان\n"
+                f"📊 <b>سود ناخالص</b>: {financials.gross_profit:,.0f} تومان\n"
+                f"🤝 <b>حق معرفی</b>: {financials.referral_amount:,.0f} تومان ({financials.referral_percentage}%)\n"
+                f"💰 <b>سود خالص</b>: {financials.net_profit:,.0f} تومان\n"
+                f"👤 <b>سهم من</b>: {financials.my_share:,.0f} تومان\n"
+                f"👥 <b>سهم شریک</b>: {financials.partner_share:,.0f} تومان\n"
+                f"💳 <b>طلب من</b>: {financials.my_debt:,.0f} تومان\n"
+                f"💰 <b>بدهی مشتری</b>: {financials.customer_debt:,.0f} تومان"
             )
             
             keyboard = [
@@ -112,7 +152,7 @@ class ProjectHandler(BaseHandler):
                     InlineKeyboardButton("🤝 حق معرفی", callback_data=f"referral_{project_id}")
                 ],
                 [
-                    InlineKeyboardButton("✅ پایان پروژه", callback_data=f"complete_{project_id}"),
+                    InlineKeyboardButton("✅ پایان پروژه", callback_data=f"complete_project_{project_id}"),
                     InlineKeyboardButton("❌ لغو پروژه", callback_data=f"cancel_project_{project_id}")
                 ],
                 [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
@@ -124,6 +164,60 @@ class ProjectHandler(BaseHandler):
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='HTML'
             )
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def complete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Complete a project."""
+        query = update.callback_query
+        await query.answer()
+        
+        project_id = int(query.data.split('_')[2])
+        db = BaseHandler.get_db()
+        try:
+            project = ProjectService.update(db, project_id, status=ProjectStatus.COMPLETED)
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>پروژه با موفقیت پایان یافت!</b>\n\n"
+                    f"🛠 شناسه: {project.id}\n"
+                    f"👤 مشتری: {project.customer.name}",
+                    parse_mode='HTML'
+                )
+                await ProjectHandler.view_project(update, context)
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error completing project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def cancel_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel a project."""
+        query = update.callback_query
+        await query.answer()
+        
+        project_id = int(query.data.split('_')[2])
+        db = BaseHandler.get_db()
+        try:
+            project = ProjectService.update(db, project_id, status=ProjectStatus.CANCELLED)
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"❌ <b>پروژه لغو شد!</b>\n\n"
+                    f"🛠 شناسه: {project.id}\n"
+                    f"👤 مشتری: {project.customer.name}",
+                    parse_mode='HTML'
+                )
+                await ProjectHandler.view_project(update, context)
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error cancelling project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
         finally:
             db.close()
     
@@ -282,8 +376,8 @@ class ProjectHandler(BaseHandler):
             
             keyboard = [
                 [InlineKeyboardButton("🔩 ثبت قطعات", callback_data=f"parts_{project.id}")],
-                [InlineKeyboardButton("💰 ثبت پرداخت", callback_data=f"payment_{project.id}")],
-                [InlineKeyboardButton("💳 ثبت هزینه", callback_data=f"expense_{project.id}")],
+                [InlineKeyboardButton("💰 ثبت پرداخت", callback_data=f"add_payment_{project.id}")],
+                [InlineKeyboardButton("💳 ثبت هزینه", callback_data=f"add_expense_{project.id}")],
                 [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project.id}")],
                 [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_projects")]
             ]

@@ -212,3 +212,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+# اضافه کردن به setup_handlers در بخش Callback handlers:
+    
+    # Project actions
+    application.add_handler(CallbackQueryHandler(ProjectHandler.complete_project, pattern="^complete_project_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.cancel_project, pattern="^cancel_project_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.view_project, pattern="^view_project_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^list_projects$"))

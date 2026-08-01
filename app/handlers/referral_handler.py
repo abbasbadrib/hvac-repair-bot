@@ -8,30 +8,50 @@ from app.handlers.base_handler import BaseHandler
 from app.services.referral_service import ReferralService
 from app.services.project_service import ProjectService
 from app.keyboards.referral_keyboard import get_referral_percentage_keyboard
+from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(REFERRAL_NAME, REFERRAL_PERCENTAGE, REFERRAL_CUSTOM) = range(3)
+REFERRAL_NAME, REFERRAL_PERCENTAGE, REFERRAL_CUSTOM = range(3)
 
 class ReferralHandler(BaseHandler):
     """Handler for referral operations."""
+    
+    # Expose states for main.py
+    REFERRAL_NAME = REFERRAL_NAME
+    REFERRAL_PERCENTAGE = REFERRAL_PERCENTAGE
+    REFERRAL_CUSTOM = REFERRAL_CUSTOM
     
     @staticmethod
     async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show referral for a project."""
         query = update.callback_query
-        project_id = int(query.data.split('_')[1])
-        context.user_data['referral_project_id'] = project_id
+        if query:
+            project_id = int(query.data.split('_')[1])
+            context.user_data['referral_project_id'] = project_id
+            await query.answer()
+        else:
+            # If called from main menu, ask for project first
+            await BaseHandler.send_message(
+                update, context,
+                "🤝 لطفاً ابتدا یک پروژه را انتخاب کنید.",
+                reply_markup=get_main_keyboard()
+            )
+            return
         
         db = BaseHandler.get_db()
         try:
+            project_id = context.user_data['referral_project_id']
             referral = ReferralService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
             
+            if not project:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+                return
+            
             if not referral:
-                await query.answer()
                 await BaseHandler.edit_message(
                     update, context,
                     f"🤝 <b>حق معرفی پروژه</b>\n\n"
@@ -61,7 +81,6 @@ class ReferralHandler(BaseHandler):
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
-            await query.answer()
             await BaseHandler.edit_message(
                 update, context,
                 text,
@@ -107,7 +126,6 @@ class ReferralHandler(BaseHandler):
         parts = query.data.split('_')
         
         if parts[1] == 'custom':
-            # Custom percentage
             await query.answer()
             await BaseHandler.edit_message(
                 update, context,
@@ -157,7 +175,7 @@ class ReferralHandler(BaseHandler):
             )
             
             text = (
-                "✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
+                f"✅ <b>حق معرفی با موفقیت ثبت شد!</b>\n\n"
                 f"👤 معرفی کننده: {referral.referrer_name}\n"
                 f"📊 درصد: {referral.percentage}%\n"
                 f"💰 مبلغ: {referral.amount:,.0f} تومان\n\n"
@@ -222,7 +240,8 @@ class ReferralHandler(BaseHandler):
         """Cancel the conversation."""
         await BaseHandler.send_message(
             update, context,
-            "❌ عملیات لغو شد."
+            "❌ عملیات لغو شد.",
+            reply_markup=get_main_keyboard()
         )
         context.user_data.clear()
         return ConversationHandler.END
