@@ -78,8 +78,68 @@ class CustomerHandler(BaseHandler):
         if query:
             await query.answer()
         
-        await BaseHandler.send_message(update, context, "➕ <b>ثبت مشتری جدید</b>\n\nلطفاً <b>نام</b> مشتری را وارد کنید:", parse_mode='HTML')
+        await BaseHandler.send_message(
+            update, context,
+            "➕ <b>ثبت مشتری جدید</b>\n\nلطفاً <b>نام</b> مشتری را وارد کنید:",
+            parse_mode='HTML'
+        )
         return NAME
+    
+    @staticmethod
+    async def add_customer_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get customer name."""
+        context.user_data['customer_name'] = update.message.text
+        await BaseHandler.send_message(
+            update, context,
+            "📞 لطفاً <b>شماره تلفن</b> مشتری را وارد کنید:",
+            parse_mode='HTML'
+        )
+        return PHONE
+    
+    @staticmethod
+    async def add_customer_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get customer phone."""
+        phone = update.message.text.strip()
+        context.user_data['customer_phone'] = phone
+        
+        await BaseHandler.send_message(
+            update, context,
+            "📍 لطفاً <b>آدرس</b> مشتری را وارد کنید (برای رد کردن '.' را وارد کنید):",
+            parse_mode='HTML'
+        )
+        return ADDRESS
+    
+    @staticmethod
+    async def add_customer_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get customer address."""
+        address = update.message.text.strip()
+        if address == '.':
+            address = None
+        context.user_data['customer_address'] = address
+        
+        # Save customer
+        db = BaseHandler.get_db()
+        try:
+            customer = CustomerService.create(
+                db,
+                name=context.user_data['customer_name'],
+                phone=context.user_data['customer_phone'],
+                address=context.user_data.get('customer_address')
+            )
+            
+            text = f"✅ <b>مشتری با موفقیت ثبت شد!</b>\n\n👤 نام: {customer.name}\n📞 تلفن: {customer.phone}"
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ ثبت پروژه جدید", callback_data=f"add_project_{customer.id}")],
+                [InlineKeyboardButton("🔙 بازگشت به لیست مشتریان", callback_data="list_customers")]
+            ])
+            
+            await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
+            logger.info(f"New customer added: {customer.name}")
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
     
     @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
