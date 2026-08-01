@@ -1,6 +1,6 @@
 {
   "$schema": "https://railpack.com/schema.json",
   "deploy": {
-    "startCommand": "python -m app.main"
+    "startCommand": "bash start.sh"
   }
 }
