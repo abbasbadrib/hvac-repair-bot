@@ -8,6 +8,8 @@ from app.handlers.base_handler import BaseHandler
 from app.services.payment_service import PaymentService
 from app.services.project_service import ProjectService
 from app.models.payment import PaymentMethod
+from app.models.project import ProjectStatus
+from app.keyboards.main_keyboard import get_main_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,20 +28,48 @@ class PaymentHandler(BaseHandler):
     @staticmethod
     async def show_payments(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show payments for a project."""
-        # Handle both message and callback_query
+        # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
             project_id = int(query.data.split('_')[1])
             context.user_data['current_project_id'] = project_id
             await query.answer()
         else:
-            # If called from main menu, ask for project
-            await BaseHandler.send_message(
-                update, context,
-                "💰 لطفاً ابتدا یک پروژه را انتخاب کنید.",
-                reply_markup=get_main_keyboard()
-            )
-            return
+            # Called from main menu - show list of projects
+            db = BaseHandler.get_db()
+            try:
+                projects = ProjectService.get_all(db)
+                if not projects:
+                    await BaseHandler.send_message(
+                        update, context,
+                        "💰 <b>ثبت درآمد</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "لطفاً ابتدا یک پروژه ثبت کنید.",
+                        reply_markup=get_main_keyboard(),
+                        parse_mode='HTML'
+                    )
+                    return
+                
+                text = "💰 <b>انتخاب پروژه برای ثبت درآمد</b>\n\n"
+                keyboard = []
+                for project in projects[:10]:
+                    status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                            callback_data=f"payments_{project.id}"
+                        )
+                    ])
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                
+                await BaseHandler.send_message(
+                    update, context,
+                    text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                return
+            finally:
+                db.close()
         
         db = BaseHandler.get_db()
         try:
