@@ -52,9 +52,6 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("menu", StartHandler.start))
     application.add_handler(CommandHandler("stats", ReportHandler.show_statistics))
     
-    # Free text handler - باید قبل از سایر handlerهای متنی باشد
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
-    
     # Customer Conversation Handler
     customer_conv = ConversationHandler(
         entry_points=[
@@ -227,7 +224,7 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ReminderHandler.set_reminder_time, pattern="^reminder_settime$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.back_to_menu, pattern="^reminder_back$"))
     
-    # Main menu handlers
+    # Main menu handlers - این Handlerها باید قبل از FreeTextHandler بیایند
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
@@ -238,6 +235,9 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^🤝 حق معرفی$"), ReferralHandler.show_referral))
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
+    
+    # Free text handler - باید آخرین Handler باشد (پایین‌ترین اولویت)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     # Callback handlers
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^back_home$"))
