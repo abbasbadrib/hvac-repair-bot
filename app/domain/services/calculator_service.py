@@ -13,6 +13,8 @@ class FinancialResult:
     total_parts_selling_price: float
     labor_cost: float
     total_expenses: float
+    general_expenses: float  # هزینه‌های عمومی
+    project_expenses: float  # هزینه‌های مستقیم پروژه
     expenses_paid_by_me: float
     expenses_paid_by_partner: float
     gross_profit: float
@@ -57,13 +59,17 @@ class CalculatorService:
         # اجرت = درآمد کل - قیمت فروش قطعات
         labor_cost = total_income - total_parts_selling_price
         
-        # هزینه‌ها
-        total_expenses = sum(e.amount for e in expenses)
+        # تفکیک هزینه‌ها
+        project_expenses = sum(e.amount for e in expenses if not e.is_general)
+        general_expenses = sum(e.amount for e in expenses if e.is_general)
+        total_expenses = project_expenses + general_expenses
+        
+        # هزینه‌های پرداخت شده توسط هر نفر
         expenses_paid_by_me = sum(e.amount for e in expenses if e.paid_by == "ME")
         expenses_paid_by_partner = sum(e.amount for e in expenses if e.paid_by == "PARTNER")
         
-        # سود ناخالص = سود قطعه + اجرت - هزینه‌ها
-        gross_profit = total_parts_profit + labor_cost - total_expenses
+        # سود ناخالص = سود قطعه + اجرت - هزینه‌های مستقیم پروژه
+        gross_profit = total_parts_profit + labor_cost - project_expenses
         
         # حق معرفی = سود ناخالص × درصد
         referral_amount = gross_profit * (referral_percentage / 100)
@@ -74,7 +80,7 @@ class CalculatorService:
         # تقسیم سود ۵۰/۵۰
         base_share = net_profit / 2
         
-        # تعدیل با هزینه‌های پرداخت شده توسط هر نفر
+        # تعدیل با هزینه‌های پرداخت شده توسط هر نفر (شامل هزینه‌های عمومی)
         my_share = base_share - expenses_paid_by_me
         partner_share = base_share - expenses_paid_by_partner
         
@@ -88,6 +94,8 @@ class CalculatorService:
             total_parts_selling_price=total_parts_selling_price,
             labor_cost=labor_cost,
             total_expenses=total_expenses,
+            general_expenses=general_expenses,
+            project_expenses=project_expenses,
             expenses_paid_by_me=expenses_paid_by_me,
             expenses_paid_by_partner=expenses_paid_by_partner,
             gross_profit=gross_profit,

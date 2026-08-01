@@ -28,6 +28,7 @@ from app.handlers.reminder_handler import ReminderHandler
 from app.handlers.dashboard_handler import DashboardHandler
 from app.handlers.settings_handler import SettingsHandler
 from app.handlers.partner_handler import PartnerHandler
+from app.handlers.free_text_handler import FreeTextHandler
 from app.web_server import start_health_server
 
 logger = setup_logger()
@@ -50,6 +51,9 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("cancel", StartHandler.cancel))
     application.add_handler(CommandHandler("menu", StartHandler.start))
     application.add_handler(CommandHandler("stats", ReportHandler.show_statistics))
+    
+    # Free text handler - باید قبل از سایر handlerهای متنی باشد
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     # Customer Conversation Handler
     customer_conv = ConversationHandler(
@@ -143,11 +147,13 @@ def setup_handlers(application: Application):
     # Expense Conversation Handler
     expense_conv = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_")
+            CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
+            CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
         ],
         states={
             ExpenseHandler.EXPENSE_TYPE: [
-                CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_")
+                CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_"),
+                CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^gen_exp_type_")
             ],
             ExpenseHandler.EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_amount)

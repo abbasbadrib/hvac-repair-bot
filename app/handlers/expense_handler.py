@@ -15,28 +15,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Conversation states
-EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION = range(4)
+EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION, EXPENSE_GENERAL = range(5)
 
 class ExpenseHandler(BaseHandler):
     """Handler for expense operations."""
     
-    # Expose states for main.py
     EXPENSE_TYPE = EXPENSE_TYPE
     EXPENSE_AMOUNT = EXPENSE_AMOUNT
     EXPENSE_PAID_BY = EXPENSE_PAID_BY
     EXPENSE_DESCRIPTION = EXPENSE_DESCRIPTION
+    EXPENSE_GENERAL = EXPENSE_GENERAL
     
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expenses for a project."""
-        # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
             project_id = int(query.data.split('_')[1])
             context.user_data['current_project_id'] = project_id
             await query.answer()
         else:
-            # Called from main menu - show list of projects
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
@@ -60,6 +58,7 @@ class ExpenseHandler(BaseHandler):
                             callback_data=f"expenses_{project.id}"
                         )
                     ])
+                keyboard.append([InlineKeyboardButton("➕ هزینه عمومی", callback_data="add_general_expense")])
                 keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
                 
                 await BaseHandler.send_message(
@@ -82,6 +81,7 @@ class ExpenseHandler(BaseHandler):
                 text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ هزینه‌ای ثبت نشده است."
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
+                    [InlineKeyboardButton("➕ هزینه عمومی", callback_data="add_general_expense")],
                     [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
                 ])
                 await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
@@ -89,24 +89,30 @@ class ExpenseHandler(BaseHandler):
             
             text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             total_expenses = 0
+            general_expenses = 0
             me_expenses = 0
             partner_expenses = 0
             
             for i, expense in enumerate(expenses, 1):
                 paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥"
-                text += f"{i}. {expense.expense_type.value}\n   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n\n"
+                general_label = " (عمومی)" if expense.is_general else ""
+                text += f"{i}. {expense.expense_type.value}{general_label}\n   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n\n"
                 total_expenses += expense.amount
+                if expense.is_general:
+                    general_expenses += expense.amount
                 if expense.paid_by == PaidBy.ME:
                     me_expenses += expense.amount
                 else:
                     partner_expenses += expense.amount
             
             text += f"💰 <b>جمع کل هزینه‌ها</b>: {total_expenses:,.0f} تومان\n"
+            text += f"📊 <b>هزینه‌های عمومی</b>: {general_expenses:,.0f} تومان\n"
             text += f"👤 <b>پرداخت شده توسط من</b>: {me_expenses:,.0f} تومان\n"
             text += f"👥 <b>پرداخت شده توسط شریک</b>: {partner_expenses:,.0f} تومان"
             
             keyboard = [
                 [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
+                [InlineKeyboardButton("➕ هزینه عمومی", callback_data="add_general_expense")],
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
@@ -115,11 +121,38 @@ class ExpenseHandler(BaseHandler):
             db.close()
     
     @staticmethod
+    async def add_general_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """شروع ثبت هزینه عمومی."""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['is_general_expense'] = True
+        
+        # Show expense type selection
+        keyboard = []
+        for exp_type in ExpenseType:
+            keyboard.append([
+                InlineKeyboardButton(exp_type.value, callback_data=f"gen_exp_type_{exp_type.value}")
+            ])
+        keyboard.append([InlineKeyboardButton("🔙 انصراف", callback_data="cancel_expense")])
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "💳 <b>ثبت هزینه عمومی</b>\n\n"
+            "هزینه‌های عمومی (ناهار، قهوه، ...) بین همه پروژه‌ها تقسیم می‌شوند.\n\n"
+            "لطفاً <b>نوع هزینه</b> را انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        return EXPENSE_TYPE
+    
+    @staticmethod
     async def add_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start adding a new expense."""
         query = update.callback_query
         project_id = int(query.data.split('_')[2])
         context.user_data['expense_project_id'] = project_id
+        context.user_data['is_general_expense'] = False
         
         await query.answer()
         
@@ -144,7 +177,12 @@ class ExpenseHandler(BaseHandler):
         """Get expense type."""
         query = update.callback_query
         parts = query.data.split('_')
-        expense_type = parts[3]
+        if parts[0] == 'gen':
+            expense_type = parts[3]
+        else:
+            expense_type = parts[3]
+            context.user_data['expense_project_id'] = int(parts[2])
+        
         context.user_data['expense_type'] = expense_type
         
         await query.answer()
@@ -214,7 +252,8 @@ class ExpenseHandler(BaseHandler):
         # Save expense
         db = BaseHandler.get_db()
         try:
-            project_id = context.user_data['expense_project_id']
+            project_id = context.user_data.get('expense_project_id')
+            is_general = context.user_data.get('is_general_expense', False)
             
             # Get expense type from value
             expense_type_value = context.user_data['expense_type']
@@ -229,11 +268,12 @@ class ExpenseHandler(BaseHandler):
             
             expense = ExpenseService.create(
                 db,
-                project_id=project_id,
+                project_id=project_id if not is_general else None,
                 expense_type=expense_type,
                 amount=context.user_data['expense_amount'],
                 paid_by=context.user_data['expense_paid_by'],
-                description=context.user_data.get('expense_description')
+                description=context.user_data.get('expense_description'),
+                is_general=is_general
             )
             
             text = (
@@ -241,17 +281,24 @@ class ExpenseHandler(BaseHandler):
                 f"💳 نوع: {expense.expense_type.value}\n"
                 f"💰 مبلغ: {expense.amount:,.0f} تومان\n"
                 f"👤 پرداخت کننده: {expense.paid_by.value}\n"
+                f"📊 نوع هزینه: {'عمومی' if expense.is_general else 'پروژه'}\n"
                 f"📝 توضیحات: {expense.description or 'ثبت نشده'}"
             )
             
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ ثبت هزینه دیگر", callback_data=f"add_expense_{project_id}")],
-                [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data=f"expenses_{project_id}")],
-                [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
-            ])
+            if is_general:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ ثبت هزینه عمومی دیگر", callback_data="add_general_expense")],
+                    [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+                ])
+            else:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ ثبت هزینه دیگر", callback_data=f"add_expense_{project_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data=f"expenses_{project_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
+                ])
             
             await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')
-            logger.info(f"New expense added: {expense.expense_type.value} for project {project_id}")
+            logger.info(f"New expense added: {expense.expense_type.value} for project {project_id or 'general'}")
             
         except Exception as e:
             logger.error(f"Error adding expense: {e}")

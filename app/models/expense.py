@@ -2,7 +2,7 @@
 Expense model and enums.
 """
 
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -28,10 +28,11 @@ class Expense(Base):
     __tablename__ = "expenses"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)  # nullable = هزینه عمومی
     expense_type = Column(Enum(ExpenseType), nullable=False)
     amount = Column(Float, nullable=False)
     paid_by = Column(Enum(PaidBy), nullable=False)
+    is_general = Column(Boolean, default=False)  # True = هزینه عمومی (مشترک بین پروژه‌ها)
     description = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
