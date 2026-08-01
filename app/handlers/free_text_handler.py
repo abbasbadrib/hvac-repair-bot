@@ -17,29 +17,38 @@ logger = logging.getLogger(__name__)
 class FreeTextHandler(BaseHandler):
     """Handler for free text input."""
     
-    # کلمات کلیدی برای تشخیص
     DEVICE_KEYWORDS = {
         'پکیج': ProjectType.PACKAGE,
         'کولر': ProjectType.AIR_CONDITIONER,
         'کولرگازی': ProjectType.AIR_CONDITIONER,
     }
     
+    # کلمات و کاراکترهایی که نباید پردازش شوند
+    EXCLUDED_PATTERNS = [
+        r'^🛠', r'^🏠', r'^👤', r'^💰', r'^💳', r'^🔩', r'^👥', r'^🤝', r'^📊', r'^⏰', r'^⚙',
+        r'^➕', r'^✅', r'^❌', r'^🔙', r'^📋', r'^✏️', r'^🗑'
+    ]
+    
     @staticmethod
     async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """پردازش متن آزاد برای ثبت سریع پروژه."""
         text = update.message.text.strip()
         
+        # اگر متن با ایموجی‌های منو شروع شود، پردازش نکن
+        for pattern in FreeTextHandler.EXCLUDED_PATTERNS:
+            if re.match(pattern, text):
+                return False
+        
         # بررسی اینکه آیا کاربر قصد ثبت سریع پروژه را دارد
         if not FreeTextHandler.is_project_request(text):
-            return False  # ادامه پردازش عادی
+            return False
         
-        # پردازش متن
         result = await FreeTextHandler.parse_and_create_project(update, context, text)
         
         if result:
-            return True  # پروژه ثبت شد، نیازی به پردازش بیشتر نیست
+            return True
         
-        return False  # ادامه پردازش عادی
+        return False
     
     @staticmethod
     def is_project_request(text: str) -> bool:
@@ -52,11 +61,9 @@ class FreeTextHandler(BaseHandler):
         """تشخیص اطلاعات و ثبت پروژه."""
         db = BaseHandler.get_db()
         try:
-            # ۱. تشخیص مشتری
             customer = await FreeTextHandler.find_customer(db, text)
             
             if not customer:
-                # مشتری پیدا نشد، از کاربر بخواهید مشتری را ثبت کند
                 await update.message.reply_text(
                     f"❌ مشتری با مشخصات '{text}' یافت نشد.\n\n"
                     "لطفاً ابتدا مشتری را با دکمه '👤 مشتری‌ها' ثبت کنید.\n"
@@ -66,23 +73,18 @@ class FreeTextHandler(BaseHandler):
                 )
                 return False
             
-            # ۲. تشخیص نوع دستگاه
             device_type = FreeTextHandler.detect_device_type(text)
-            
-            # ۳. تشخیص توضیحات
             description = FreeTextHandler.extract_description(text)
             
-            # ۴. ثبت پروژه
             project = ProjectService.create(
                 db,
                 customer_id=customer.id,
                 project_type=device_type or ProjectType.PACKAGE,
-                service_type="تعمیر",  # مقدار پیش‌فرض
+                service_type="تعمیر",
                 description=description or f"ثبت سریع برای {customer.name}",
-                labor_cost=0  # مقدار پیش‌فرض، قابل ویرایش بعداً
+                labor_cost=0
             )
             
-            # ۵. پیام موفقیت
             await update.message.reply_text(
                 f"✅ <b>پروژه با موفقیت ثبت شد!</b>\n\n"
                 f"🛠 شناسه: {project.id}\n"
@@ -111,20 +113,14 @@ class FreeTextHandler(BaseHandler):
     @staticmethod
     async def find_customer(db, text: str):
         """پیدا کردن مشتری از متن."""
-        # بررسی همه مشتریان
         customers = CustomerService.get_all(db)
         
-        # اولویت ۱: جستجوی دقیق بر اساس نام
         for customer in customers:
             if customer.name in text:
                 return customer
-        
-        # اولویت ۲: جستجو بر اساس آدرس
-        for customer in customers:
             if customer.address and customer.address in text:
                 return customer
         
-        # اولویت ۳: جستجوی کلمات کلیدی در نام
         for customer in customers:
             name_parts = customer.name.split()
             for part in name_parts:
@@ -144,12 +140,7 @@ class FreeTextHandler(BaseHandler):
     @staticmethod
     def extract_description(text: str):
         """استخراج توضیحات از متن."""
-        # حذف کلمات کلیدی
         remove_words = ['پروژه', 'آدرس', 'پکیج', 'کولر', 'کولرگازی']
         for word in remove_words:
             text = text.replace(word, '')
-        
-        # حذف نام مشتری (اگر شناسایی شده باشد)
-        # این بخش ساده‌سازی شده است
-        
         return text.strip() or None
