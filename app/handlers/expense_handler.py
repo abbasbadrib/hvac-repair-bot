@@ -29,19 +29,16 @@ class ExpenseHandler(BaseHandler):
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expenses for a project."""
-        # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
             project_id = int(query.data.split('_')[1])
             context.user_data['current_project_id'] = project_id
             await query.answer()
         else:
-            # Called from main menu - show list of projects
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
                 if not projects:
-                    # Even if no projects, show general expense option
                     await BaseHandler.send_message(
                         update, context,
                         "💳 <b>هزینه‌ها</b>\n\n"
@@ -100,9 +97,10 @@ class ExpenseHandler(BaseHandler):
             general_expenses = 0
             me_expenses = 0
             partner_expenses = 0
+            joint_expenses = 0
             
             for i, expense in enumerate(expenses, 1):
-                paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥"
+                paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥" if expense.paid_by == PaidBy.PARTNER else "🤝"
                 general_label = " (عمومی)" if expense.is_general else ""
                 text += f"{i}. {expense.expense_type.value}{general_label}\n   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n\n"
                 total_expenses += expense.amount
@@ -110,14 +108,18 @@ class ExpenseHandler(BaseHandler):
                     general_expenses += expense.amount
                 if expense.paid_by == PaidBy.ME:
                     me_expenses += expense.amount
-                else:
+                elif expense.paid_by == PaidBy.PARTNER:
                     partner_expenses += expense.amount
+                else:
+                    joint_expenses += expense.amount
             
             text += f"💰 <b>جمع کل هزینه‌ها</b>: {total_expenses:,.0f} تومان\n"
             if general_expenses > 0:
                 text += f"📊 <b>هزینه‌های عمومی</b>: {general_expenses:,.0f} تومان\n"
             text += f"👤 <b>پرداخت شده توسط من</b>: {me_expenses:,.0f} تومان\n"
-            text += f"👥 <b>پرداخت شده توسط شریک</b>: {partner_expenses:,.0f} تومان"
+            text += f"👥 <b>پرداخت شده توسط شریک</b>: {partner_expenses:,.0f} تومان\n"
+            if joint_expenses > 0:
+                text += f"🤝 <b>پرداخت شده به صورت مشترک</b>: {joint_expenses:,.0f} تومان"
             
             keyboard = [
                 [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
@@ -137,7 +139,6 @@ class ExpenseHandler(BaseHandler):
         
         context.user_data['is_general_expense'] = True
         
-        # Show expense type selection
         keyboard = []
         for exp_type in ExpenseType:
             keyboard.append([
@@ -165,7 +166,6 @@ class ExpenseHandler(BaseHandler):
         
         await query.answer()
         
-        # Show expense type selection
         keyboard = []
         for exp_type in ExpenseType:
             keyboard.append([
@@ -219,11 +219,13 @@ class ExpenseHandler(BaseHandler):
             )
             return EXPENSE_AMOUNT
         
-        # Show who paid
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("👤 من", callback_data="exp_paid_me"),
                 InlineKeyboardButton("👥 شریک", callback_data="exp_paid_partner")
+            ],
+            [
+                InlineKeyboardButton("🤝 مشترک", callback_data="exp_paid_joint")
             ],
             [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_expense")]
         ])
@@ -241,7 +243,12 @@ class ExpenseHandler(BaseHandler):
         """Get who paid."""
         query = update.callback_query
         paid_by = query.data.split('_')[2]
-        context.user_data['expense_paid_by'] = PaidBy.ME if paid_by == 'me' else PaidBy.PARTNER
+        if paid_by == 'me':
+            context.user_data['expense_paid_by'] = PaidBy.ME
+        elif paid_by == 'partner':
+            context.user_data['expense_paid_by'] = PaidBy.PARTNER
+        else:
+            context.user_data['expense_paid_by'] = PaidBy.JOINT
         
         await query.answer()
         await BaseHandler.edit_message(
@@ -259,13 +266,11 @@ class ExpenseHandler(BaseHandler):
             description = None
         context.user_data['expense_description'] = description
         
-        # Save expense
         db = BaseHandler.get_db()
         try:
             project_id = context.user_data.get('expense_project_id')
             is_general = context.user_data.get('is_general_expense', False)
             
-            # Get expense type from value
             expense_type_value = context.user_data['expense_type']
             expense_type = None
             for et in ExpenseType:

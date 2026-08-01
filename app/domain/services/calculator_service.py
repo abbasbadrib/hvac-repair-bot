@@ -13,10 +13,11 @@ class FinancialResult:
     total_parts_selling_price: float
     labor_cost: float
     total_expenses: float
-    general_expenses: float  # هزینه‌های عمومی
-    project_expenses: float  # هزینه‌های مستقیم پروژه
+    general_expenses: float
+    project_expenses: float
     expenses_paid_by_me: float
     expenses_paid_by_partner: float
+    expenses_paid_joint: float
     gross_profit: float
     referral_percentage: float
     referral_amount: float
@@ -47,46 +48,32 @@ class CalculatorService:
         if expenses is None:
             expenses = []
         
-        # درآمد کل = مبلغ دریافتی از مشتری
         total_income = total_amount_from_customer
-        
-        # محاسبه قیمت فروش کل قطعات
         total_parts_selling_price = sum(p.selling_price * p.quantity for p in parts)
-        
-        # محاسبه سود قطعات
         total_parts_profit = sum((p.selling_price - p.purchase_price) * p.quantity for p in parts)
-        
-        # اجرت = درآمد کل - قیمت فروش قطعات
         labor_cost = total_income - total_parts_selling_price
         
-        # تفکیک هزینه‌ها
         project_expenses = sum(e.amount for e in expenses if not e.is_general)
         general_expenses = sum(e.amount for e in expenses if e.is_general)
         total_expenses = project_expenses + general_expenses
         
-        # هزینه‌های پرداخت شده توسط هر نفر
         expenses_paid_by_me = sum(e.amount for e in expenses if e.paid_by == "ME")
         expenses_paid_by_partner = sum(e.amount for e in expenses if e.paid_by == "PARTNER")
+        expenses_paid_joint = sum(e.amount for e in expenses if e.paid_by == "JOINT")
         
-        # سود ناخالص = سود قطعه + اجرت - هزینه‌های مستقیم پروژه
         gross_profit = total_parts_profit + labor_cost - project_expenses
-        
-        # حق معرفی = سود ناخالص × درصد
         referral_amount = gross_profit * (referral_percentage / 100)
-        
-        # سود خالص = سود ناخالص - حق معرفی
         net_profit = gross_profit - referral_amount
         
-        # تقسیم سود ۵۰/۵۰
         base_share = net_profit / 2
+        my_adjustment = expenses_paid_by_me + (expenses_paid_joint / 2)
+        partner_adjustment = expenses_paid_by_partner + (expenses_paid_joint / 2)
         
-        # تعدیل با هزینه‌های پرداخت شده توسط هر نفر (شامل هزینه‌های عمومی)
-        my_share = base_share - expenses_paid_by_me
-        partner_share = base_share - expenses_paid_by_partner
+        my_share = base_share - my_adjustment
+        partner_share = base_share - partner_adjustment
         
-        # محاسبه بدهی‌ها
         customer_debt = max(0, total_income - total_payments)
-        my_debt = my_share + expenses_paid_by_me
+        my_debt = my_share + my_adjustment
         
         return FinancialResult(
             total_income=total_income,
@@ -98,6 +85,7 @@ class CalculatorService:
             project_expenses=project_expenses,
             expenses_paid_by_me=expenses_paid_by_me,
             expenses_paid_by_partner=expenses_paid_by_partner,
+            expenses_paid_joint=expenses_paid_joint,
             gross_profit=gross_profit,
             referral_percentage=referral_percentage,
             referral_amount=referral_amount,

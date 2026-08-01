@@ -2,11 +2,10 @@
 Dashboard and main menu handlers.
 """
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from app.handlers.base_handler import BaseHandler
 from app.keyboards.main_keyboard import get_main_keyboard
-from app.services.report_service import ReportService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,13 +19,21 @@ class DashboardHandler(BaseHandler):
         query = update.callback_query
         if query:
             await query.answer()
-            await BaseHandler.edit_message(
-                update, context,
-                "🏠 <b>منوی اصلی</b>\n\n"
-                "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
-                reply_markup=get_main_keyboard(),
-                parse_mode='HTML'
-            )
+            try:
+                await query.edit_message_text(
+                    "🏠 <b>منوی اصلی</b>\n\n"
+                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    reply_markup=get_main_keyboard(),
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.warning(f"Could not edit message: {e}")
+                await query.message.reply_text(
+                    "🏠 <b>منوی اصلی</b>\n\n"
+                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    reply_markup=get_main_keyboard(),
+                    parse_mode='HTML'
+                )
         else:
             await BaseHandler.send_message(
                 update, context,
@@ -41,6 +48,7 @@ class DashboardHandler(BaseHandler):
         """Show dashboard from main menu button."""
         db = BaseHandler.get_db()
         try:
+            from app.services.report_service import ReportService
             dashboard_data = ReportService.get_dashboard_data(db)
             
             text = (
@@ -60,13 +68,15 @@ class DashboardHandler(BaseHandler):
             else:
                 text += "✅ هیچ بدهکاری وجود ندارد."
             
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 بروزرسانی", callback_data="refresh_dashboard")],
+                [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+            ])
+            
             await BaseHandler.send_message(
                 update, context,
                 text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 بروزرسانی", callback_data="refresh_dashboard")],
-                    [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
-                ]),
+                reply_markup=keyboard,
                 parse_mode='HTML'
             )
         finally:

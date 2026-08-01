@@ -22,17 +22,18 @@ class PaidBy(str, enum.Enum):
     """Who paid the expense."""
     ME = "من"
     PARTNER = "شریک"
+    JOINT = "مشترک"
 
 class Expense(Base):
     """Expense record."""
     __tablename__ = "expenses"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)  # nullable = هزینه عمومی
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     expense_type = Column(Enum(ExpenseType), nullable=False)
     amount = Column(Float, nullable=False)
     paid_by = Column(Enum(PaidBy), nullable=False)
-    is_general = Column(Boolean, default=False)  # True = هزینه عمومی (مشترک بین پروژه‌ها)
+    is_general = Column(Boolean, default=False)
     description = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
