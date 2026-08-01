@@ -12,16 +12,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Conversation states
-NAME, PHONE, ADDRESS, DESCRIPTION, EDIT_ADDRESS = range(5)
+NAME, PHONE, ADDRESS, DESCRIPTION, EDIT_NAME, EDIT_PHONE, EDIT_ADDRESS = range(7)
 
 class CustomerHandler(BaseHandler):
     """Handler for customer operations."""
     
-    # Expose states for main.py
     NAME = NAME
     PHONE = PHONE
     ADDRESS = ADDRESS
     DESCRIPTION = DESCRIPTION
+    EDIT_NAME = EDIT_NAME
+    EDIT_PHONE = EDIT_PHONE
     EDIT_ADDRESS = EDIT_ADDRESS
     
     @staticmethod
@@ -78,59 +79,14 @@ class CustomerHandler(BaseHandler):
             )
             
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✏️ ویرایش آدرس", callback_data=f"edit_address_{customer_id}")],
-                [InlineKeyboardButton("✏️ ویرایش نام", callback_data=f"edit_name_{customer_id}")],
-                [InlineKeyboardButton("🗑 حذف مشتری", callback_data=f"delete_customer_{customer_id}")],
+                [InlineKeyboardButton("✏️ ویرایش", callback_data=f"edit_customer_{customer_id}")],
+                [InlineKeyboardButton("🗑 حذف", callback_data=f"delete_customer_{customer_id}")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="list_customers")]
             ])
             
             await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
         finally:
             db.close()
-    
-    @staticmethod
-    async def edit_address_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start editing customer address."""
-        query = update.callback_query
-        customer_id = int(query.data.split('_')[2])
-        context.user_data['edit_customer_id'] = customer_id
-        
-        await query.answer()
-        await BaseHandler.edit_message(
-            update, context,
-            "📍 لطفاً <b>آدرس جدید</b> مشتری را وارد کنید:",
-            parse_mode='HTML'
-        )
-        return EDIT_ADDRESS
-    
-    @staticmethod
-    async def edit_address_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Save new address."""
-        new_address = update.message.text.strip()
-        
-        db = BaseHandler.get_db()
-        try:
-            customer_id = context.user_data['edit_customer_id']
-            customer = CustomerService.update(db, customer_id, address=new_address)
-            
-            if customer:
-                text = (
-                    f"✅ <b>آدرس با موفقیت ویرایش شد!</b>\n\n"
-                    f"👤 نام: {customer.name}\n"
-                    f"📍 آدرس جدید: {customer.address}"
-                )
-                await BaseHandler.send_message(update, context, text, parse_mode='HTML')
-                logger.info(f"Address updated for customer {customer_id}")
-            else:
-                await BaseHandler.send_message(update, context, "❌ مشتری یافت نشد")
-        except Exception as e:
-            logger.error(f"Error updating address: {e}")
-            await BaseHandler.send_message(update, context, f"❌ خطا در ویرایش آدرس: {str(e)}")
-        finally:
-            db.close()
-        
-        context.user_data.clear()
-        return ConversationHandler.END
     
     @staticmethod
     async def add_customer_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -206,6 +162,109 @@ class CustomerHandler(BaseHandler):
                 update, context,
                 f"❌ خطا در ثبت مشتری: {str(e)}"
             )
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing customer."""
+        query = update.callback_query
+        customer_id = int(query.data.split('_')[2])
+        context.user_data['edit_customer_id'] = customer_id
+        
+        await query.answer()
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✏️ ویرایش نام", callback_data="edit_name")],
+            [InlineKeyboardButton("📞 ویرایش تلفن", callback_data="edit_phone")],
+            [InlineKeyboardButton("📍 ویرایش آدرس", callback_data="edit_address")],
+            [InlineKeyboardButton("🔙 انصراف", callback_data="list_customers")]
+        ])
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "✏️ <b>ویرایش مشتری</b>\n\n"
+            "لطفاً بخش مورد نظر برای ویرایش را انتخاب کنید:",
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+        return EDIT_NAME
+    
+    @staticmethod
+    async def delete_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a customer."""
+        query = update.callback_query
+        customer_id = int(query.data.split('_')[2])
+        
+        db = BaseHandler.get_db()
+        try:
+            customer = CustomerService.get_by_id(db, customer_id)
+            if not customer:
+                await query.answer("❌ مشتری یافت نشد", True)
+                return
+            
+            # Check if customer has projects
+            if customer.projects:
+                await query.answer("❌ این مشتری دارای پروژه است و قابل حذف نیست", True)
+                return
+            
+            if CustomerService.delete(db, customer_id):
+                await query.answer("✅ مشتری حذف شد")
+                await BaseHandler.edit_message(
+                    update, context,
+                    f"✅ مشتری '{customer.name}' با موفقیت حذف شد.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_customers")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Customer {customer_id} deleted")
+            else:
+                await query.answer("❌ خطا در حذف مشتری", True)
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def edit_address_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing customer address."""
+        query = update.callback_query
+        customer_id = int(query.data.split('_')[2])
+        context.user_data['edit_customer_id'] = customer_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            "📍 لطفاً <b>آدرس جدید</b> مشتری را وارد کنید:",
+            parse_mode='HTML'
+        )
+        return EDIT_ADDRESS
+    
+    @staticmethod
+    async def edit_address_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new address."""
+        new_address = update.message.text.strip()
+        
+        db = BaseHandler.get_db()
+        try:
+            customer_id = context.user_data['edit_customer_id']
+            customer = CustomerService.update(db, customer_id, address=new_address)
+            
+            if customer:
+                text = (
+                    f"✅ <b>آدرس با موفقیت ویرایش شد!</b>\n\n"
+                    f"👤 نام: {customer.name}\n"
+                    f"📍 آدرس جدید: {customer.address}"
+                )
+                await BaseHandler.send_message(update, context, text, parse_mode='HTML')
+                logger.info(f"Address updated for customer {customer_id}")
+            else:
+                await BaseHandler.send_message(update, context, "❌ مشتری یافت نشد")
+        except Exception as e:
+            logger.error(f"Error updating address: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا در ویرایش آدرس: {str(e)}")
         finally:
             db.close()
         
