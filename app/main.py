@@ -27,6 +27,7 @@ from app.handlers.report_handler import ReportHandler
 from app.handlers.reminder_handler import ReminderHandler
 from app.handlers.dashboard_handler import DashboardHandler
 from app.handlers.settings_handler import SettingsHandler
+from app.handlers.partner_handler import PartnerHandler
 from app.web_server import start_health_server
 
 logger = setup_logger()
@@ -234,6 +235,8 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
     application.add_handler(MessageHandler(filters.Regex("^💰 ثبت درآمد$"), PaymentHandler.show_payments))
     application.add_handler(MessageHandler(filters.Regex("^💳 هزینه‌ها$"), ExpenseHandler.show_expenses))
+    application.add_handler(MessageHandler(filters.Regex("^🔩 قطعات$"), PartHandler.show_parts))
+    application.add_handler(MessageHandler(filters.Regex("^👥 شریک$"), PartnerHandler.show_partner_info))
     application.add_handler(MessageHandler(filters.Regex("^🤝 حق معرفی$"), ReferralHandler.show_referral))
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
