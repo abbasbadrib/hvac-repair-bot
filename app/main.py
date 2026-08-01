@@ -3,10 +3,12 @@ Main application entry point for HVAC Repair Bot.
 """
 
 import logging
+import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from app.config import Config
-from app.database.base import Base, engine
+from app.core.config import Config
+from app.core.database import Base, engine
+from app.utils.logger import setup_logger
 from app.handlers.start_handler import StartHandler
 from app.handlers.customer_handler import CustomerHandler
 from app.handlers.project_handler import ProjectHandler
@@ -18,13 +20,9 @@ from app.handlers.report_handler import ReportHandler
 from app.handlers.reminder_handler import ReminderHandler
 from app.handlers.dashboard_handler import DashboardHandler
 from app.handlers.settings_handler import SettingsHandler
+from app.web_server import start_health_server
 
-# Setup logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 def create_tables():
     """Create database tables if they don't exist."""
@@ -95,6 +93,15 @@ def main():
     """Main entry point."""
     try:
         logger.info("🚀 Starting HVAC Repair Bot...")
+        
+        # Start health check server in background
+        health_thread = threading.Thread(
+            target=start_health_server,
+            args=(8080,),
+            daemon=True
+        )
+        health_thread.start()
+        logger.info("✅ Health check server started")
         
         # Create tables
         create_tables()
