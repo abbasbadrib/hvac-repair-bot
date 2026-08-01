@@ -29,21 +29,29 @@ class ExpenseHandler(BaseHandler):
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expenses for a project."""
+        # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
             project_id = int(query.data.split('_')[1])
             context.user_data['current_project_id'] = project_id
             await query.answer()
         else:
+            # Called from main menu - show list of projects
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
                 if not projects:
+                    # Even if no projects, show general expense option
                     await BaseHandler.send_message(
                         update, context,
-                        "💳 <b>هزینه‌ها</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
-                        "لطفاً ابتدا یک پروژه ثبت کنید.",
-                        reply_markup=get_main_keyboard(),
+                        "💳 <b>هزینه‌ها</b>\n\n"
+                        "❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "اما می‌توانید <b>هزینه عمومی</b> ثبت کنید:\n"
+                        "(ناهار، قهوه، هزینه‌های مشترک)",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("➕ هزینه عمومی", callback_data="add_general_expense")],
+                            [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+                        ]),
                         parse_mode='HTML'
                     )
                     return
@@ -106,7 +114,8 @@ class ExpenseHandler(BaseHandler):
                     partner_expenses += expense.amount
             
             text += f"💰 <b>جمع کل هزینه‌ها</b>: {total_expenses:,.0f} تومان\n"
-            text += f"📊 <b>هزینه‌های عمومی</b>: {general_expenses:,.0f} تومان\n"
+            if general_expenses > 0:
+                text += f"📊 <b>هزینه‌های عمومی</b>: {general_expenses:,.0f} تومان\n"
             text += f"👤 <b>پرداخت شده توسط من</b>: {me_expenses:,.0f} تومان\n"
             text += f"👥 <b>پرداخت شده توسط شریک</b>: {partner_expenses:,.0f} تومان"
             
@@ -177,6 +186,7 @@ class ExpenseHandler(BaseHandler):
         """Get expense type."""
         query = update.callback_query
         parts = query.data.split('_')
+        
         if parts[0] == 'gen':
             expense_type = parts[3]
         else:
