@@ -346,3 +346,25 @@ def main():
 
 if __name__ == "__main__":
     main()
+# اضافه کردن به بخش Settings callbacks:
+
+    # Settings Conversation Handler
+    settings_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(SettingsHandler.edit_my_name, pattern="^edit_my_name$"),
+            CallbackQueryHandler(SettingsHandler.edit_partner_name, pattern="^edit_partner_name$")
+        ],
+        states={
+            SettingsHandler.EDIT_MY_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_my_name)
+            ],
+            SettingsHandler.EDIT_PARTNER_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_partner_name)
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", SettingsHandler.cancel)
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(settings_conv)
