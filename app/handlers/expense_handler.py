@@ -15,7 +15,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Conversation states - ترتیب جدید: نوع → توضیحات → مبلغ → پرداخت کننده
+# Conversation states
 EXPENSE_TYPE, EXPENSE_DESCRIPTION, EXPENSE_AMOUNT, EXPENSE_PAID_BY = range(4)
 EDIT_EXPENSE_AMOUNT, EDIT_EXPENSE_DESCRIPTION = range(10, 12)
 
@@ -97,7 +97,6 @@ class ExpenseHandler(BaseHandler):
                 await query.answer()
                 return
         else:
-            # از Reply Keyboard
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
@@ -351,6 +350,7 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
+                # رفتن به صفحه جزئیات هزینه با دکمه‌های ویرایش
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
@@ -358,7 +358,8 @@ class ExpenseHandler(BaseHandler):
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"💰 مبلغ جدید: {expense.amount:,.0f} تومان",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
+                        [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_amount_{expense_id}")],
+                        [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
                     ]),
                     parse_mode='HTML'
                 )
@@ -418,7 +419,8 @@ class ExpenseHandler(BaseHandler):
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"📝 توضیحات جدید: {expense.description or 'ثبت نشده'}",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
+                        [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_desc_{expense_id}")],
+                        [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
                     ]),
                     parse_mode='HTML'
                 )
@@ -706,11 +708,13 @@ class ExpenseHandler(BaseHandler):
             
             if is_general:
                 keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✏️ ویرایش", callback_data=f"expense_detail_{expense.id}")],
                     [InlineKeyboardButton("🔙 بازگشت به هزینه‌های عمومی", callback_data="show_general_expenses")],
                     [InlineKeyboardButton("🔙 بازگشت به منوی هزینه‌ها", callback_data="back_to_expense_menu")]
                 ])
             else:
                 keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✏️ ویرایش", callback_data=f"expense_detail_{expense.id}")],
                     [InlineKeyboardButton("➕ ثبت هزینه دیگر", callback_data=f"add_expense_{project_id}")],
                     [InlineKeyboardButton("🔙 بازگشت به هزینه‌های پروژه", callback_data=f"expenses_{project_id}")],
                     [InlineKeyboardButton("🔙 بازگشت به منوی هزینه‌ها", callback_data="back_to_expense_menu")]
