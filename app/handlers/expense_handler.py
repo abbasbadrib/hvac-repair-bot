@@ -28,6 +28,13 @@ class ExpenseHandler(BaseHandler):
     EDIT_EXPENSE_AMOUNT = EDIT_EXPENSE_AMOUNT
     EDIT_EXPENSE_DESCRIPTION = EDIT_EXPENSE_DESCRIPTION
     
+    # لیست دستورات خاص (non-numeric callbacks)
+    SPECIAL_COMMANDS = [
+        "show_general_expenses",
+        "back_to_expenses",
+        "back_to_expense_menu"
+    ]
+    
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expenses for a project or general expenses."""
@@ -35,17 +42,37 @@ class ExpenseHandler(BaseHandler):
             query = update.callback_query
             data = query.data
             
+            # بررسی دستورات خاص
             if data == "show_general_expenses":
                 context.user_data['show_general'] = True
                 await query.answer()
                 await ExpenseHandler.show_general_expenses(update, context)
                 return
             
-            project_id = int(data.split('_')[1])
-            context.user_data['current_project_id'] = project_id
-            context.user_data['show_general'] = False
-            await query.answer()
+            if data == "back_to_expenses" or data == "back_to_expense_menu":
+                await query.answer()
+                context.user_data.pop('current_project_id', None)
+                # فراخوانی مجدد برای نمایش منوی اصلی
+                await ExpenseHandler.show_expenses(update, context)
+                return
+            
+            # اگر داده با "expenses_" شروع می‌شود، عدد را استخراج کن
+            if data.startswith("expenses_"):
+                try:
+                    project_id = int(data.split('_')[1])
+                    context.user_data['current_project_id'] = project_id
+                    context.user_data['show_general'] = False
+                    await query.answer()
+                except (IndexError, ValueError) as e:
+                    logger.error(f"Error parsing project_id from {data}: {e}")
+                    await query.answer("❌ خطا در شناسایی پروژه", show_alert=True)
+                    return
+            else:
+                # اگر داده ناشناخته است
+                await query.answer()
+                return
         else:
+            # از منوی اصلی
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
@@ -81,9 +108,17 @@ class ExpenseHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            project_id = context.user_data['current_project_id']
+            project_id = context.user_data.get('current_project_id')
+            if not project_id:
+                await BaseHandler.send_message(update, context, "❌ پروژه‌ای انتخاب نشده است")
+                return
+            
             expenses = ExpenseService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
+            
+            if not project:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+                return
             
             if not expenses:
                 text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ هزینه‌ای ثبت نشده است."
@@ -98,7 +133,6 @@ class ExpenseHandler(BaseHandler):
             text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             text += await ExpenseHandler.format_expenses(expenses)
             
-            # ساخت کیبورد با دکمه‌های جداگانه برای هر هزینه
             keyboard = []
             for expense in expenses:
                 paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥" if expense.paid_by == PaidBy.PARTNER else "🤝"
@@ -130,7 +164,7 @@ class ExpenseHandler(BaseHandler):
                 text = "💳 <b>هزینه‌های عمومی</b>\n\n❌ هیچ هزینه عمومی ثبت نشده است."
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton("➕ هزینه عمومی جدید", callback_data="add_general_expense")],
-                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expenses")]
+                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
                 ])
                 
                 if update.callback_query:
@@ -142,7 +176,6 @@ class ExpenseHandler(BaseHandler):
             text = "💳 <b>هزینه‌های عمومی</b>\n\n"
             text += await ExpenseHandler.format_expenses(expenses)
             
-            # ساخت کیبورد با دکمه‌های جداگانه برای هر هزینه
             keyboard = []
             for expense in expenses:
                 paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥" if expense.paid_by == PaidBy.PARTNER else "🤝"
@@ -154,7 +187,7 @@ class ExpenseHandler(BaseHandler):
                 ])
             
             keyboard.append([InlineKeyboardButton("➕ هزینه عمومی جدید", callback_data="add_general_expense")])
-            keyboard.append([InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expenses")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")])
             
             if update.callback_query:
                 await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -203,7 +236,13 @@ class ExpenseHandler(BaseHandler):
     async def expense_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expense detail with edit/delete buttons."""
         query = update.callback_query
-        expense_id = int(query.data.split('_')[2])
+        try:
+            expense_id = int(query.data.split('_')[2])
+        except (IndexError, ValueError) as e:
+            logger.error(f"Error parsing expense_id: {e}")
+            await query.answer("❌ خطا در شناسایی هزینه", show_alert=True)
+            return
+        
         await query.answer()
         
         db = BaseHandler.get_db()
@@ -232,7 +271,7 @@ class ExpenseHandler(BaseHandler):
                 [InlineKeyboardButton("✏️ ویرایش مبلغ", callback_data=f"edit_exp_amount_{expense_id}")],
                 [InlineKeyboardButton("✏️ ویرایش توضیحات", callback_data=f"edit_exp_desc_{expense_id}")],
                 [InlineKeyboardButton("🗑 حذف هزینه", callback_data=f"delete_exp_confirm_{expense_id}")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expenses")]
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
             ])
             
             await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
@@ -247,10 +286,16 @@ class ExpenseHandler(BaseHandler):
     async def edit_expense_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Edit expense amount."""
         query = update.callback_query
-        expense_id = int(query.data.split('_')[3])
-        context.user_data['edit_expense_id'] = expense_id
+        try:
+            expense_id = int(query.data.split('_')[3])
+        except (IndexError, ValueError) as e:
+            logger.error(f"Error parsing expense_id: {e}")
+            await query.answer("❌ خطا در شناسایی هزینه", show_alert=True)
+            return
         
+        context.user_data['edit_expense_id'] = expense_id
         await query.answer()
+        
         await BaseHandler.edit_message(
             update, context,
             "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
@@ -288,7 +333,7 @@ class ExpenseHandler(BaseHandler):
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"💰 مبلغ جدید: {expense.amount:,.0f} تومان",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expenses")]
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
                     ]),
                     parse_mode='HTML'
                 )
@@ -308,10 +353,16 @@ class ExpenseHandler(BaseHandler):
     async def edit_expense_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Edit expense description."""
         query = update.callback_query
-        expense_id = int(query.data.split('_')[3])
-        context.user_data['edit_expense_id'] = expense_id
+        try:
+            expense_id = int(query.data.split('_')[3])
+        except (IndexError, ValueError) as e:
+            logger.error(f"Error parsing expense_id: {e}")
+            await query.answer("❌ خطا در شناسایی هزینه", show_alert=True)
+            return
         
+        context.user_data['edit_expense_id'] = expense_id
         await query.answer()
+        
         await BaseHandler.edit_message(
             update, context,
             "📝 <b>ویرایش توضیحات هزینه</b>\n\n"
@@ -342,7 +393,7 @@ class ExpenseHandler(BaseHandler):
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"📝 توضیحات جدید: {expense.description or 'ثبت نشده'}",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expenses")]
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
                     ]),
                     parse_mode='HTML'
                 )
@@ -362,15 +413,19 @@ class ExpenseHandler(BaseHandler):
     async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Delete an expense."""
         query = update.callback_query
-        expense_id = int(query.data.split('_')[3])
+        try:
+            expense_id = int(query.data.split('_')[3])
+        except (IndexError, ValueError) as e:
+            logger.error(f"Error parsing expense_id: {e}")
+            await query.answer("❌ خطا در شناسایی هزینه", show_alert=True)
+            return
         
         await query.answer()
         
-        # Double confirmation
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ بله، حذف کن", callback_data=f"delete_confirm_{expense_id}"),
-                InlineKeyboardButton("❌ نه، انصراف", callback_data="back_to_expenses")
+                InlineKeyboardButton("❌ نه، انصراف", callback_data="back_to_expense_menu")
             ]
         ])
         
@@ -388,7 +443,13 @@ class ExpenseHandler(BaseHandler):
     async def delete_expense_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Confirm delete expense."""
         query = update.callback_query
-        expense_id = int(query.data.split('_')[2])
+        try:
+            expense_id = int(query.data.split('_')[2])
+        except (IndexError, ValueError) as e:
+            logger.error(f"Error parsing expense_id: {e}")
+            await query.answer("❌ خطا در شناسایی هزینه", show_alert=True)
+            return
+        
         await query.answer()
         
         db = BaseHandler.get_db()
@@ -408,7 +469,7 @@ class ExpenseHandler(BaseHandler):
                     f"💳 نوع: {exp_type}\n"
                     f"💰 مبلغ: {exp_amount:,.0f} تومان",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expenses")]
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_expense_menu")]
                     ]),
                     parse_mode='HTML'
                 )
@@ -425,10 +486,11 @@ class ExpenseHandler(BaseHandler):
         return ConversationHandler.END
     
     @staticmethod
-    async def back_to_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def back_to_expense_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Back to expense menu."""
         query = update.callback_query
         await query.answer()
+        context.user_data.pop('current_project_id', None)
         await ExpenseHandler.show_expenses(update, context)
     
     @staticmethod
@@ -612,7 +674,7 @@ class ExpenseHandler(BaseHandler):
             )
             
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expenses")]
+                [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
             ])
             
             await BaseHandler.send_message(update, context, text, keyboard, parse_mode='HTML')

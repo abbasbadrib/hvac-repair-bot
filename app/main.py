@@ -270,10 +270,10 @@ def setup_handlers(application: Application):
     # Part
     application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^parts_"))
     
-    # Expense - با متودهای جدید
+    # Expense
     application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^expenses_"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.show_general_expenses, pattern="^show_general_expenses$"))
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.back_to_expenses, pattern="^back_to_expenses$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.back_to_expense_menu, pattern="^back_to_expense_menu$"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.expense_detail, pattern="^expense_detail_"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_amount, pattern="^edit_exp_amount_"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_description, pattern="^edit_exp_desc_"))
