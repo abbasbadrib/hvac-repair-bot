@@ -12,6 +12,7 @@ from app.models.expense import ExpenseType, PaidBy
 from app.models.project import ProjectStatus
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -332,26 +333,55 @@ class ExpenseHandler(BaseHandler):
     @staticmethod
     async def edit_expense_amount_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Save new expense amount."""
+        # دریافت متن پیام کاربر
+        text = update.message.text.strip()
+        
+        # بررسی اینکه کاربر /cancel را زده است
+        if text.lower() == '/cancel':
+            await BaseHandler.send_message(
+                update, context,
+                "❌ عملیات ویرایش لغو شد.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
+                ]),
+                parse_mode='HTML'
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+        
+        # حذف کاما و تبدیل به عدد
         try:
-            new_amount = float(update.message.text.replace(',', '').strip())
+            new_amount = float(text.replace(',', '').strip())
             if new_amount <= 0:
                 raise ValueError("Amount must be positive")
         except ValueError:
             await BaseHandler.send_message(
                 update, context,
-                "❌ مبلغ نامعتبر است. لطفاً یک عدد مثبت وارد کنید.",
+                "❌ مبلغ نامعتبر است. لطفاً یک عدد مثبت وارد کنید.\n"
+                "مثال: 5000 یا 5,000",
                 parse_mode='HTML'
             )
             return EDIT_EXPENSE_AMOUNT
         
         db = BaseHandler.get_db()
         try:
-            expense_id = context.user_data['edit_expense_id']
+            expense_id = context.user_data.get('edit_expense_id')
+            if not expense_id:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ شناسه هزینه یافت نشد. لطفاً دوباره تلاش کنید.",
+                    parse_mode='HTML'
+                )
+                return ConversationHandler.END
+            
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
-                # Clear user data first
-                context.user_data.clear()
+                # نمایش پیام موفقیت با دکمه‌های مناسب
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_amount_{expense_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
+                ])
                 
                 await BaseHandler.send_message(
                     update, context,
@@ -359,22 +389,29 @@ class ExpenseHandler(BaseHandler):
                     f"🆔 شناسه: {expense.id}\n"
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"💰 مبلغ جدید: {expense.amount:,.0f} تومان",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_amount_{expense_id}")],
-                        [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
-                    ]),
+                    reply_markup=keyboard,
                     parse_mode='HTML'
                 )
+                
                 logger.info(f"Expense {expense_id} amount updated to {new_amount}")
-                return ConversationHandler.END
             else:
-                await BaseHandler.send_message(update, context, "❌ هزینه‌ای با این شناسه یافت نشد")
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
+                
         except Exception as e:
             logger.error(f"Error updating expense: {e}")
-            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا در ویرایش هزینه: {str(e)}",
+                parse_mode='HTML'
+            )
         finally:
             db.close()
         
+        # پاک کردن داده‌های موقت و پایان Conversation
         context.user_data.clear()
         return ConversationHandler.END
     
@@ -411,30 +448,46 @@ class ExpenseHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            expense_id = context.user_data['edit_expense_id']
+            expense_id = context.user_data.get('edit_expense_id')
+            if not expense_id:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ شناسه هزینه یافت نشد.",
+                    parse_mode='HTML'
+                )
+                return ConversationHandler.END
+            
             expense = ExpenseService.update(db, expense_id, description=new_description)
             
             if expense:
-                context.user_data.clear()
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_desc_{expense_id}")],
+                    [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
+                ])
+                
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>توضیحات هزینه با موفقیت ویرایش شد!</b>\n\n"
                     f"🆔 شناسه: {expense.id}\n"
                     f"💳 نوع: {expense.expense_type.value}\n"
                     f"📝 توضیحات جدید: {expense.description or 'ثبت نشده'}",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("✏️ ویرایش مجدد", callback_data=f"edit_exp_desc_{expense_id}")],
-                        [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data="back_to_expense_menu")]
-                    ]),
+                    reply_markup=keyboard,
                     parse_mode='HTML'
                 )
                 logger.info(f"Expense {expense_id} description updated")
-                return ConversationHandler.END
             else:
-                await BaseHandler.send_message(update, context, "❌ هزینه‌ای با این شناسه یافت نشد")
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
         except Exception as e:
             logger.error(f"Error updating expense: {e}")
-            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا در ویرایش هزینه: {str(e)}",
+                parse_mode='HTML'
+            )
         finally:
             db.close()
         
