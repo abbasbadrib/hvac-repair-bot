@@ -28,13 +28,6 @@ class ExpenseHandler(BaseHandler):
     EDIT_EXPENSE_AMOUNT = EDIT_EXPENSE_AMOUNT
     EDIT_EXPENSE_DESCRIPTION = EDIT_EXPENSE_DESCRIPTION
     
-    # لیست دستورات خاص (non-numeric callbacks)
-    SPECIAL_COMMANDS = [
-        "show_general_expenses",
-        "back_to_expenses",
-        "back_to_expense_menu"
-    ]
-    
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show expenses for a project or general expenses."""
@@ -42,7 +35,6 @@ class ExpenseHandler(BaseHandler):
             query = update.callback_query
             data = query.data
             
-            # بررسی دستورات خاص
             if data == "show_general_expenses":
                 context.user_data['show_general'] = True
                 await query.answer()
@@ -55,7 +47,6 @@ class ExpenseHandler(BaseHandler):
                 await ExpenseHandler.show_expenses(update, context)
                 return
             
-            # اگر داده با "expenses_" شروع می‌شود، عدد را استخراج کن
             if data.startswith("expenses_"):
                 try:
                     project_id = int(data.split('_')[1])
@@ -70,7 +61,6 @@ class ExpenseHandler(BaseHandler):
                 await query.answer()
                 return
         else:
-            # از منوی اصلی
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
@@ -128,7 +118,7 @@ class ExpenseHandler(BaseHandler):
                 await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
-            text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
+            text = f"💳 <b>هزینه‌های 프로ژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             text += await ExpenseHandler.format_expenses(expenses)
             
             keyboard = []
@@ -294,6 +284,7 @@ class ExpenseHandler(BaseHandler):
         context.user_data['edit_expense_id'] = expense_id
         await query.answer()
         
+        # استفاده از send_message به جای edit_message برای دریافت پاسخ
         await BaseHandler.send_message(
             update, context,
             "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
@@ -324,6 +315,7 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
+                # نمایش پیام موفقیت
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
@@ -671,7 +663,6 @@ class ExpenseHandler(BaseHandler):
                 f"📝 توضیحات: {expense.description or 'ثبت نشده'}"
             )
             
-            # دکمه بازگشت به هزینه‌ها
             if is_general:
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 بازگشت به هزینه‌های عمومی", callback_data="show_general_expenses")],
