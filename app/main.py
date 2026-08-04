@@ -12,7 +12,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
     ConversationHandler,
-    ContextTypes  # <-- این خط اضافه شد
+    ContextTypes
 )
 from app.core.config import Config
 from app.core.database import Base, engine
@@ -146,7 +146,7 @@ def setup_handlers(application: Application):
     )
     application.add_handler(part_conv)
     
-    # Expense Conversation
+    # ============ EXPENSE CONVERSATION (اصلاح شده) ============
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
@@ -166,9 +166,11 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
             ],
+            # ویرایش مبلغ هزینه
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
+            # ویرایش توضیحات هزینه
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
@@ -350,7 +352,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors and notify user."""
     logger.error(f"Update {update} caused error {context.error}")
     
-    # ارسال پیام خطا به کاربر
     if update and update.effective_message:
         try:
             await update.effective_message.reply_text(
@@ -367,7 +368,6 @@ def main():
     try:
         logger.info("🚀 Starting HVAC Repair Bot...")
         
-        # Start health check server
         health_thread = threading.Thread(
             target=start_health_server,
             args=(8080,),
@@ -376,19 +376,12 @@ def main():
         health_thread.start()
         logger.info("✅ Health check server started")
         
-        # Create tables
         create_tables()
         
-        # Create application
         application = Application.builder().token(Config.BOT_TOKEN).build()
-        
-        # Setup handlers
         setup_handlers(application)
-        
-        # Add error handler
         application.add_error_handler(error_handler)
         
-        # Start bot
         logger.info("🤖 Bot is running...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         

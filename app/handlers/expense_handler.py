@@ -350,7 +350,6 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
-                # رفتن به صفحه جزئیات هزینه با دکمه‌های ویرایش
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
