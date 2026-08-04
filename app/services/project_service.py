@@ -11,7 +11,7 @@ from datetime import datetime, date
 class ProjectService:
     """Project CRUD operations."""
 
-    # مدل SQLAlchemy برای دسترسی مستقیم
+    # مدل SQLAlchemy برای دسترسی مستقیم (رفع AttributeError)
     model = Project
 
     @staticmethod

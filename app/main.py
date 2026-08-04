@@ -146,7 +146,7 @@ def setup_handlers(application: Application):
     )
     application.add_handler(part_conv)
     
-    # ============ EXPENSE CONVERSATION (اصلاح شده) ============
+    # Expense Conversation - اصلاح شده
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
@@ -166,11 +166,9 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
             ],
-            # ویرایش مبلغ هزینه
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
-            # ویرایش توضیحات هزینه
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
@@ -262,7 +260,7 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^menu_reminder$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^menu_settings$"))
     
-    # ============ MAIN MENU HANDLERS (Reply Keyboard) ============
+    # ============ MAIN MENU HANDLERS ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))

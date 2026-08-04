@@ -778,7 +778,8 @@ class ExpenseHandler(BaseHandler):
         """Get expense amount."""
         logger.info("🔍 add_expense_amount called")
         try:
-            amount = float(update.message.text.replace(',', '').strip())
+            text = update.message.text.strip()
+            amount = float(text.replace(',', '').strip())
             if amount <= 0:
                 raise ValueError("Amount must be positive")
             context.user_data['expense_amount'] = amount
@@ -811,7 +812,6 @@ class ExpenseHandler(BaseHandler):
             parse_mode='HTML'
         )
         return EXPENSE_PAID_BY
-        # try-except برای این متد در پایین بسته شده است
     
     @staticmethod
     async def add_expense_paid_by(update: Update, context: ContextTypes.DEFAULT_TYPE):

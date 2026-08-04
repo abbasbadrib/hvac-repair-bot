@@ -53,7 +53,6 @@ class ReminderHandler(BaseHandler):
             debt_projects = []
             
             for project in all_projects:
-                # پروژه‌های تکمیل شده یا در حال انجام که بدهی دارند
                 if project.status in [ProjectStatus.COMPLETED, ProjectStatus.IN_PROGRESS]:
                     payments = PaymentService.get_by_project(db, project.id)
                     total_payments = sum(p.amount for p in payments)
