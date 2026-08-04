@@ -15,6 +15,7 @@ from app.keyboards.main_keyboard import get_main_keyboard
 from app.core.database import engine
 import logging
 import sys
+import importlib
 
 logger = logging.getLogger(__name__)
 
@@ -96,25 +97,32 @@ class DiagnoseHandler(BaseHandler):
         except Exception as e:
             results.append(f"❌ اتصال به دیتابیس: خطا - {str(e)}")
         
-        # 4. بررسی Handlerها
+        # 4. بررسی Handlerها با نام صحیح
         handlers = [
-            ("StartHandler", "start"),
-            ("CustomerHandler", "add_customer_start"),
-            ("ProjectHandler", "add_project_start"),
-            ("PartHandler", "add_part_start"),
-            ("ExpenseHandler", "add_expense_start"),
-            ("PaymentHandler", "add_payment_start"),
-            ("ReferralHandler", "add_referral_start"),
+            ("start_handler", "StartHandler", "start"),
+            ("customer_handler", "CustomerHandler", "add_customer_start"),
+            ("project_handler", "ProjectHandler", "add_project_start"),
+            ("part_handler", "PartHandler", "add_part_start"),
+            ("expense_handler", "ExpenseHandler", "add_expense_start"),
+            ("payment_handler", "PaymentHandler", "add_payment_start"),
+            ("referral_handler", "ReferralHandler", "add_referral_start"),
+            ("report_handler", "ReportHandler", "show_report_menu"),
+            ("reminder_handler", "ReminderHandler", "show_reminders"),
+            ("settings_handler", "SettingsHandler", "show_settings"),
         ]
         
-        for handler_name, method_name in handlers:
+        for module_name, handler_name, method_name in handlers:
             try:
-                module = __import__(f"app.handlers.{handler_name.lower()}", fromlist=[handler_name])
+                module = importlib.import_module(f"app.handlers.{module_name}")
                 handler_class = getattr(module, handler_name)
                 if hasattr(handler_class, method_name):
                     results.append(f"✅ {handler_name}: متد {method_name} موجود است")
                 else:
                     results.append(f"⚠️ {handler_name}: متد {method_name} وجود ندارد")
+            except ImportError as e:
+                results.append(f"❌ {handler_name}: ماژول یافت نشد - {str(e)}")
+            except AttributeError as e:
+                results.append(f"❌ {handler_name}: کلاس یافت نشد - {str(e)}")
             except Exception as e:
                 results.append(f"❌ {handler_name}: خطا - {str(e)}")
         
