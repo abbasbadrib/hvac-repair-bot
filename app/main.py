@@ -351,3 +351,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+# اضافه کردن به بخش Expense callbacks:
+
+    # Expense inline detail
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.expense_detail, pattern="^expense_detail_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_amount, pattern="^edit_exp_amount_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_description, pattern="^edit_exp_desc_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_exp_confirm_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense_confirm, pattern="^delete_confirm_"))
