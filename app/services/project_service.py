@@ -11,6 +11,9 @@ from datetime import datetime, date
 class ProjectService:
     """Project CRUD operations."""
 
+    # مدل SQLAlchemy برای دسترسی مستقیم
+    model = Project
+
     @staticmethod
     def create(db: Session, customer_id: int, project_type: ProjectType,
                service_type: str, description: Optional[str] = None,

@@ -43,6 +43,7 @@ class ProjectHandler(BaseHandler):
         """Show list of projects."""
         db = BaseHandler.get_db()
         try:
+            # استفاده از ProjectService.model به جای Project
             projects = db.query(ProjectService.model).options(joinedload(ProjectService.model.customer)).all()
             if not projects:
                 await BaseHandler.send_message(
@@ -128,7 +129,7 @@ class ProjectHandler(BaseHandler):
                 f"💳 <b>هزینه‌ها</b>: {financials.total_expenses:,.0f} تومان\n"
                 f"📊 <b>سود ناخالص</b>: {financials.gross_profit:,.0f} تومان\n"
                 f"🤝 <b>حق معرفی</b>: {financials.referral_amount:,.0f} تومان ({financials.referral_percentage}%)\n"
-                f"💰 <b>سود خالص</b>: {financials.net_profit:,.0f} تومан\n"
+                f"💰 <b>سود خالص</b>: {financials.net_profit:,.0f} تومان\n"
                 f"👤 <b>سهم من</b>: {financials.my_share:,.0f} تومان\n"
                 f"👥 <b>سهم شریک</b>: {financials.partner_share:,.0f} تومان\n"
                 f"💳 <b>طلب من</b>: {financials.my_debt:,.0f} تومان\n"
