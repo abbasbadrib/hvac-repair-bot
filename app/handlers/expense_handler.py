@@ -350,6 +350,9 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
+                # Clear user data first
+                context.user_data.clear()
+                
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
@@ -363,6 +366,7 @@ class ExpenseHandler(BaseHandler):
                     parse_mode='HTML'
                 )
                 logger.info(f"Expense {expense_id} amount updated to {new_amount}")
+                return ConversationHandler.END
             else:
                 await BaseHandler.send_message(update, context, "❌ هزینه‌ای با این شناسه یافت نشد")
         except Exception as e:
@@ -411,6 +415,7 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, description=new_description)
             
             if expense:
+                context.user_data.clear()
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>توضیحات هزینه با موفقیت ویرایش شد!</b>\n\n"
@@ -424,6 +429,7 @@ class ExpenseHandler(BaseHandler):
                     parse_mode='HTML'
                 )
                 logger.info(f"Expense {expense_id} description updated")
+                return ConversationHandler.END
             else:
                 await BaseHandler.send_message(update, context, "❌ هزینه‌ای با این شناسه یافت نشد")
         except Exception as e:
