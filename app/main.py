@@ -56,6 +56,7 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("diagnose", DiagnoseHandler.diagnose))
     
     # ============ CONVERSATION HANDLERS ============
+    # این Handlerها باید قبل از FreeTextHandler بیایند
     
     # Customer Conversation
     customer_conv = ConversationHandler(
@@ -146,7 +147,7 @@ def setup_handlers(application: Application):
     )
     application.add_handler(part_conv)
     
-    # Expense Conversation - اصلاح شده
+    # Expense Conversation
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
@@ -247,19 +248,6 @@ def setup_handlers(application: Application):
     )
     application.add_handler(settings_conv)
     
-    # ============ MENU CALLBACK HANDLERS ============
-    application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^menu_home$"))
-    application.add_handler(CallbackQueryHandler(CustomerHandler.show_customers, pattern="^menu_customers$"))
-    application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^menu_projects$"))
-    application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^menu_parts$"))
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^menu_expenses$"))
-    application.add_handler(CallbackQueryHandler(PaymentHandler.show_payments, pattern="^menu_income$"))
-    application.add_handler(CallbackQueryHandler(PartnerHandler.show_partner_info, pattern="^menu_partner$"))
-    application.add_handler(CallbackQueryHandler(ReferralHandler.show_referral, pattern="^menu_referral$"))
-    application.add_handler(CallbackQueryHandler(ReportHandler.show_report_menu, pattern="^menu_reports$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^menu_reminder$"))
-    application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^menu_settings$"))
-    
     # ============ MAIN MENU HANDLERS ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
@@ -273,8 +261,18 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     
-    # ============ FREE TEXT HANDLER ============
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
+    # ============ MENU CALLBACK HANDLERS ============
+    application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^menu_home$"))
+    application.add_handler(CallbackQueryHandler(CustomerHandler.show_customers, pattern="^menu_customers$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^menu_projects$"))
+    application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^menu_parts$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^menu_expenses$"))
+    application.add_handler(CallbackQueryHandler(PaymentHandler.show_payments, pattern="^menu_income$"))
+    application.add_handler(CallbackQueryHandler(PartnerHandler.show_partner_info, pattern="^menu_partner$"))
+    application.add_handler(CallbackQueryHandler(ReferralHandler.show_referral, pattern="^menu_referral$"))
+    application.add_handler(CallbackQueryHandler(ReportHandler.show_report_menu, pattern="^menu_reports$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^menu_reminder$"))
+    application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^menu_settings$"))
     
     # ============ CALLBACK HANDLERS ============
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^back_home$"))
@@ -343,6 +341,10 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(SettingsHandler.confirm_reset, pattern="^confirm_reset$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.cancel_reset, pattern="^cancel_reset$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_error_logs, pattern="^error_logs$"))
+    
+    # ============ FREE TEXT HANDLER (آخرین اولویت) ============
+    # این Handler باید آخرین باشد تا پیام‌های Conversation را Consume نکند
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     logger.info("✅ All handlers registered successfully")
 

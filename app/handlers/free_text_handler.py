@@ -33,13 +33,24 @@ class FreeTextHandler(BaseHandler):
         """پردازش متن آزاد برای ثبت سریع پروژه."""
         text = update.message.text.strip()
         
+        # بررسی اینکه آیا کاربر در حال پاسخ به Conversation است
+        # اگر context.user_data دارای کلیدهای خاص Conversation باشد، نادیده بگیر
+        if context.user_data and any(key in context.user_data for key in 
+            ['edit_expense_id', 'expense_project_id', 'part_project_id', 'project_customer_id']):
+            logger.info(f"🔍 FreeTextHandler - Skipping, user in conversation: {list(context.user_data.keys())}")
+            return False
+        
+        # بررسی الگوهای مستثنی
         for pattern in FreeTextHandler.EXCLUDED_PATTERNS:
             if re.match(pattern, text):
+                logger.info(f"🔍 FreeTextHandler - Skipping excluded pattern: {text}")
                 return False
         
+        # بررسی اینکه آیا متن درخواست ثبت پروژه است
         if not FreeTextHandler.is_project_request(text):
             return False
         
+        logger.info(f"🔍 FreeTextHandler - Processing: {text}")
         result = await FreeTextHandler.parse_and_create_project(update, context, text)
         return result if result else False
     
