@@ -152,19 +152,19 @@ def setup_handlers(application: Application):
             CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
         ],
         states={
-            # ثبت هزینه جدید
+            # ثبت هزینه جدید - ترتیب جدید: نوع → توضیحات → مبلغ → پرداخت کننده
             ExpenseHandler.EXPENSE_TYPE: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_"),
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^gen_exp_type_")
+            ],
+            ExpenseHandler.EXPENSE_DESCRIPTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_description)
             ],
             ExpenseHandler.EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_amount)
             ],
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
-            ],
-            ExpenseHandler.EXPENSE_DESCRIPTION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_description)
             ],
             # ویرایش مبلغ هزینه
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
@@ -249,8 +249,21 @@ def setup_handlers(application: Application):
     )
     application.add_handler(settings_conv)
     
-    # ============ MAIN MENU HANDLERS ============
-    # این Handlerها باید قبل از FreeTextHandler بیایند
+    # ============ MENU CALLBACK HANDLERS ============
+    # این Handlerها دکمه‌های منوی اصلی را مدیریت می‌کنند
+    application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^menu_home$"))
+    application.add_handler(CallbackQueryHandler(CustomerHandler.show_customers, pattern="^menu_customers$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^menu_projects$"))
+    application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^menu_parts$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^menu_expenses$"))
+    application.add_handler(CallbackQueryHandler(PaymentHandler.show_payments, pattern="^menu_income$"))
+    application.add_handler(CallbackQueryHandler(PartnerHandler.show_partner_info, pattern="^menu_partner$"))
+    application.add_handler(CallbackQueryHandler(ReferralHandler.show_referral, pattern="^menu_referral$"))
+    application.add_handler(CallbackQueryHandler(ReportHandler.show_report_menu, pattern="^menu_reports$"))
+    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^menu_reminder$"))
+    application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^menu_settings$"))
+    
+    # ============ MAIN MENU HANDLERS (Reply Keyboard - برای سازگاری) ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
@@ -260,8 +273,8 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^👥 شریک$"), PartnerHandler.show_partner_info))
     application.add_handler(MessageHandler(filters.Regex("^🤝 حق معرفی$"), ReferralHandler.show_referral))
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
-    application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
+    application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     
     # ============ FREE TEXT HANDLER (آخرین اولویت) ============
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))

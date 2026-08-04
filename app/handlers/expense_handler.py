@@ -1,5 +1,6 @@
 """
-Expense management handlers with inline keyboard for edit and delete.
+Expense management handlers with improved flow.
+Order: Type → Description → Amount → Paid By
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -14,17 +15,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Conversation states
-EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION = range(4)
+# Conversation states - ترتیب جدید: نوع → توضیحات → مبلغ → پرداخت کننده
+EXPENSE_TYPE, EXPENSE_DESCRIPTION, EXPENSE_AMOUNT, EXPENSE_PAID_BY = range(4)
 EDIT_EXPENSE_AMOUNT, EDIT_EXPENSE_DESCRIPTION = range(10, 12)
 
 class ExpenseHandler(BaseHandler):
     """Handler for expense operations."""
     
     EXPENSE_TYPE = EXPENSE_TYPE
+    EXPENSE_DESCRIPTION = EXPENSE_DESCRIPTION
     EXPENSE_AMOUNT = EXPENSE_AMOUNT
     EXPENSE_PAID_BY = EXPENSE_PAID_BY
-    EXPENSE_DESCRIPTION = EXPENSE_DESCRIPTION
     EDIT_EXPENSE_AMOUNT = EDIT_EXPENSE_AMOUNT
     EDIT_EXPENSE_DESCRIPTION = EDIT_EXPENSE_DESCRIPTION
     
@@ -118,7 +119,7 @@ class ExpenseHandler(BaseHandler):
                 await BaseHandler.edit_message(update, context, text, keyboard, parse_mode='HTML')
                 return
             
-            text = f"💳 <b>هزینه‌های 프로ژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
+            text = f"💳 <b>هزینه‌های پروژه</b>\n\n👤 مشتری: {project.customer.name}\n\n"
             text += await ExpenseHandler.format_expenses(expenses)
             
             keyboard = []
@@ -284,7 +285,6 @@ class ExpenseHandler(BaseHandler):
         context.user_data['edit_expense_id'] = expense_id
         await query.answer()
         
-        # استفاده از send_message به جای edit_message برای دریافت پاسخ
         await BaseHandler.send_message(
             update, context,
             "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
@@ -315,7 +315,6 @@ class ExpenseHandler(BaseHandler):
             expense = ExpenseService.update(db, expense_id, amount=new_amount)
             
             if expense:
-                # نمایش پیام موفقیت
                 await BaseHandler.send_message(
                     update, context,
                     f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
@@ -560,7 +559,26 @@ class ExpenseHandler(BaseHandler):
         await query.answer()
         await BaseHandler.edit_message(
             update, context,
-            f"💳 <b>ثبت هزینه {expense_type}</b>\n\n💰 مبلغ هزینه را وارد کنید (تومان):",
+            f"💳 <b>ثبت هزینه {expense_type}</b>\n\n"
+            f"📝 لطفاً <b>توضیحات</b> را وارد کنید:\n"
+            f"(مثلاً: ناهار امروز، بنزین ماشین، ...)\n"
+            f"(برای رد کردن '.' را وارد کنید)",
+            parse_mode='HTML'
+        )
+        return EXPENSE_DESCRIPTION
+    
+    @staticmethod
+    async def add_expense_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get expense description."""
+        description = update.message.text.strip()
+        if description == '.':
+            description = None
+        context.user_data['expense_description'] = description
+        
+        await BaseHandler.send_message(
+            update, context,
+            f"💰 <b>ثبت هزینه {context.user_data['expense_type']}</b>\n\n"
+            f"مبلغ هزینه را وارد کنید (تومان):",
             parse_mode='HTML'
         )
         return EXPENSE_AMOUNT
@@ -594,7 +612,9 @@ class ExpenseHandler(BaseHandler):
         
         await BaseHandler.send_message(
             update, context,
-            "💳 چه کسی این هزینه را پرداخت کرده است؟",
+            f"💳 <b>ثبت هزینه {context.user_data['expense_type']}</b>\n\n"
+            f"💰 مبلغ: {amount:,.0f} تومان\n\n"
+            "چه کسی این هزینه را پرداخت کرده است؟",
             reply_markup=keyboard,
             parse_mode='HTML'
         )
@@ -602,7 +622,7 @@ class ExpenseHandler(BaseHandler):
     
     @staticmethod
     async def add_expense_paid_by(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get who paid."""
+        """Get who paid and save."""
         query = update.callback_query
         paid_by = query.data.split('_')[2]
         if paid_by == 'me':
@@ -613,40 +633,25 @@ class ExpenseHandler(BaseHandler):
             context.user_data['expense_paid_by'] = PaidBy.JOINT
         
         await query.answer()
-        await BaseHandler.edit_message(
-            update, context,
-            "📝 لطفاً <b>توضیحات</b> هزینه را وارد کنید:\n(برای رد کردن '.' را وارد کنید)",
-            parse_mode='HTML'
-        )
-        return EXPENSE_DESCRIPTION
-    
-    @staticmethod
-    async def add_expense_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Get expense description and save."""
-        description = update.message.text.strip()
-        if description == '.':
-            description = None
-        context.user_data['expense_description'] = description
         
         db = BaseHandler.get_db()
         try:
             project_id = context.user_data.get('expense_project_id')
             is_general = context.user_data.get('is_general_expense', False)
-            
-            expense_type_value = context.user_data['expense_type']
-            expense_type = None
+            expense_type = context.user_data['expense_type']
+            expense_type_enum = None
             for et in ExpenseType:
-                if et.value == expense_type_value:
-                    expense_type = et
+                if et.value == expense_type:
+                    expense_type_enum = et
                     break
             
-            if not expense_type:
+            if not expense_type_enum:
                 raise ValueError("Invalid expense type")
             
             expense = ExpenseService.create(
                 db,
                 project_id=project_id if not is_general else None,
-                expense_type=expense_type,
+                expense_type=expense_type_enum,
                 amount=context.user_data['expense_amount'],
                 paid_by=context.user_data['expense_paid_by'],
                 description=context.user_data.get('expense_description'),

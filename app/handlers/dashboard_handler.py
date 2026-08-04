@@ -1,5 +1,5 @@
 """
-Dashboard and main menu handlers.
+Dashboard and main menu handlers with inline keyboard support.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
