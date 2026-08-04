@@ -1,5 +1,5 @@
 """
-Part management handlers.
+Part management handlers with menu support.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -31,23 +31,71 @@ class PartHandler(BaseHandler):
         if update.callback_query:
             query = update.callback_query
             data = query.data
-            if data.startswith("parts_"):
-                project_id = int(data.split('_')[1])
-                context.user_data['current_project_id'] = project_id
+            
+            # اگر از منوی اصلی آمده باشد
+            if data == "menu_parts":
                 await query.answer()
+                db = BaseHandler.get_db()
+                try:
+                    projects = ProjectService.get_all(db)
+                    if not projects:
+                        await BaseHandler.edit_message(
+                            update, context,
+                            "🔩 <b>قطعات</b>\n\n"
+                            "❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                            "لطفاً ابتدا یک پروژه ثبت کنید.",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+                            ]),
+                            parse_mode='HTML'
+                        )
+                        return
+                    
+                    text = "🔩 <b>انتخاب پروژه برای مدیریت قطعات</b>\n\n"
+                    keyboard = []
+                    for project in projects[:10]:
+                        status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                        keyboard.append([
+                            InlineKeyboardButton(
+                                f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                                callback_data=f"parts_{project.id}"
+                            )
+                        ])
+                    keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                    
+                    await BaseHandler.edit_message(
+                        update, context,
+                        text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='HTML'
+                    )
+                    return
+                finally:
+                    db.close()
+            
+            # اگر از انتخاب پروژه آمده باشد
+            if data.startswith("parts_"):
+                try:
+                    project_id = int(data.split('_')[1])
+                    context.user_data['current_project_id'] = project_id
+                    await query.answer()
+                except (IndexError, ValueError) as e:
+                    logger.error(f"Error parsing project_id: {e}")
+                    await query.answer("❌ خطا در شناسایی پروژه", show_alert=True)
+                    return
             else:
                 await query.answer()
                 return
-        
-        # If no project_id in context, show list of projects
-        if not context.user_data.get('current_project_id'):
+        else:
+            # از منوی اصلی (Reply Keyboard)
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
                 if not projects:
                     await BaseHandler.send_message(
                         update, context,
-                        "🔩 <b>قطعات</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "🔩 <b>قطعات</b>\n\n"
+                        "❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
                         "لطفاً ابتدا یک پروژه ثبت کنید.",
                         reply_markup=get_main_keyboard(),
                         parse_mode='HTML'
@@ -80,19 +128,11 @@ class PartHandler(BaseHandler):
         try:
             project_id = context.user_data.get('current_project_id')
             if not project_id:
-                await BaseHandler.send_message(
-                    update, context,
-                    "❌ پروژه‌ای انتخاب نشده است.",
-                    reply_markup=get_main_keyboard()
-                )
+                await BaseHandler.send_message(update, context, "❌ پروژه‌ای انتخاب نشده است")
                 return
             
             parts = PartService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
-            
-            if not project:
-                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
-                return
             
             if not parts:
                 text = f"🔩 <b>قطعات پروژه</b>\n\n👤 مشتری: {project.customer.name}\n❌ هیچ قطعه‌ای ثبت نشده است."

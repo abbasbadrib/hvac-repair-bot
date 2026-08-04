@@ -152,7 +152,6 @@ def setup_handlers(application: Application):
             CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
         ],
         states={
-            # ثبت هزینه جدید - ترتیب جدید: نوع → توضیحات → مبلغ → پرداخت کننده
             ExpenseHandler.EXPENSE_TYPE: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_"),
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^gen_exp_type_")
@@ -166,11 +165,9 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
             ],
-            # ویرایش مبلغ هزینه
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
-            # ویرایش توضیحات هزینه
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
@@ -250,7 +247,6 @@ def setup_handlers(application: Application):
     application.add_handler(settings_conv)
     
     # ============ MENU CALLBACK HANDLERS ============
-    # این Handlerها دکمه‌های منوی اصلی را مدیریت می‌کنند
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^menu_home$"))
     application.add_handler(CallbackQueryHandler(CustomerHandler.show_customers, pattern="^menu_customers$"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.show_projects, pattern="^menu_projects$"))
@@ -263,7 +259,7 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^menu_reminder$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^menu_settings$"))
     
-    # ============ MAIN MENU HANDLERS (Reply Keyboard - برای سازگاری) ============
+    # ============ MAIN MENU HANDLERS (Reply Keyboard) ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
@@ -276,7 +272,7 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     
-    # ============ FREE TEXT HANDLER (آخرین اولویت) ============
+    # ============ FREE TEXT HANDLER ============
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     # ============ CALLBACK HANDLERS ============
@@ -349,6 +345,22 @@ def setup_handlers(application: Application):
     
     logger.info("✅ All handlers registered successfully")
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Log errors and notify user."""
+    logger.error(f"Update {update} caused error {context.error}")
+    
+    # ارسال پیام خطا به کاربر
+    if update and update.effective_message:
+        try:
+            await update.effective_message.reply_text(
+                "❌ <b>خطا</b>\n\n"
+                "متأسفانه خطایی رخ داده است. لطفاً دوباره تلاش کنید.\n"
+                "اگر خطا تکرار شد، با پشتیبانی تماس بگیرید.",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.error(f"Could not send error message: {e}")
+
 def main():
     """Main entry point."""
     try:
@@ -371,6 +383,9 @@ def main():
         
         # Setup handlers
         setup_handlers(application)
+        
+        # Add error handler
+        application.add_error_handler(error_handler)
         
         # Start bot
         logger.info("🤖 Bot is running...")

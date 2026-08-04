@@ -36,6 +36,41 @@ class ExpenseHandler(BaseHandler):
             query = update.callback_query
             data = query.data
             
+            if data == "menu_expenses":
+                await query.answer()
+                db = BaseHandler.get_db()
+                try:
+                    projects = ProjectService.get_all(db)
+                    
+                    text = "💳 <b>مدیریت هزینه‌ها</b>\n\n"
+                    keyboard = []
+                    
+                    if projects:
+                        text += "📋 <b>انتخاب پروژه:</b>\n"
+                        for project in projects[:10]:
+                            status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                            keyboard.append([
+                                InlineKeyboardButton(
+                                    f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                                    callback_data=f"expenses_{project.id}"
+                                )
+                            ])
+                        keyboard.append([])
+                    
+                    keyboard.append([InlineKeyboardButton("💳 هزینه‌های عمومی", callback_data="show_general_expenses")])
+                    keyboard.append([InlineKeyboardButton("➕ هزینه عمومی جدید", callback_data="add_general_expense")])
+                    keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                    
+                    await BaseHandler.edit_message(
+                        update, context,
+                        text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='HTML'
+                    )
+                    return
+                finally:
+                    db.close()
+            
             if data == "show_general_expenses":
                 context.user_data['show_general'] = True
                 await query.answer()
@@ -62,6 +97,7 @@ class ExpenseHandler(BaseHandler):
                 await query.answer()
                 return
         else:
+            # از Reply Keyboard
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)

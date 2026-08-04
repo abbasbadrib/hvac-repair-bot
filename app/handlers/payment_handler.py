@@ -1,5 +1,5 @@
 """
-Payment management handlers.
+Payment management handlers with menu support.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -20,7 +20,6 @@ PAYMENT_AMOUNT, PAYMENT_METHOD, PAYMENT_DESCRIPTION = range(3)
 class PaymentHandler(BaseHandler):
     """Handler for payment operations."""
     
-    # Expose states for main.py
     PAYMENT_AMOUNT = PAYMENT_AMOUNT
     PAYMENT_METHOD = PAYMENT_METHOD
     PAYMENT_DESCRIPTION = PAYMENT_DESCRIPTION
@@ -31,18 +30,72 @@ class PaymentHandler(BaseHandler):
         # Check if called from main menu or callback
         if update.callback_query:
             query = update.callback_query
-            project_id = int(query.data.split('_')[1])
-            context.user_data['current_project_id'] = project_id
-            await query.answer()
+            data = query.data
+            
+            # اگر از منوی اصلی آمده باشد
+            if data == "menu_income":
+                await query.answer()
+                db = BaseHandler.get_db()
+                try:
+                    projects = ProjectService.get_all(db)
+                    if not projects:
+                        await BaseHandler.edit_message(
+                            update, context,
+                            "💰 <b>ثبت درآمد</b>\n\n"
+                            "❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                            "لطفاً ابتدا یک پروژه ثبت کنید.",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")]
+                            ]),
+                            parse_mode='HTML'
+                        )
+                        return
+                    
+                    text = "💰 <b>انتخاب پروژه برای ثبت درآمد</b>\n\n"
+                    keyboard = []
+                    for project in projects[:10]:
+                        status_emoji = "🟢" if project.status == ProjectStatus.IN_PROGRESS else "✅"
+                        keyboard.append([
+                            InlineKeyboardButton(
+                                f"{status_emoji} {project.customer.name} - {project.project_type.value}",
+                                callback_data=f"payments_{project.id}"
+                            )
+                        ])
+                    keyboard.append([InlineKeyboardButton("🔙 بازگشت به خانه", callback_data="back_home")])
+                    
+                    await BaseHandler.edit_message(
+                        update, context,
+                        text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='HTML'
+                    )
+                    return
+                finally:
+                    db.close()
+            
+            # اگر از انتخاب پروژه آمده باشد
+            if data.startswith("payments_"):
+                try:
+                    project_id = int(data.split('_')[1])
+                    context.user_data['current_project_id'] = project_id
+                    await query.answer()
+                except (IndexError, ValueError) as e:
+                    logger.error(f"Error parsing project_id: {e}")
+                    await query.answer("❌ خطا در شناسایی پروژه", show_alert=True)
+                    return
+            else:
+                await query.answer()
+                return
         else:
-            # Called from main menu - show list of projects
+            # از منوی اصلی (Reply Keyboard)
             db = BaseHandler.get_db()
             try:
                 projects = ProjectService.get_all(db)
                 if not projects:
                     await BaseHandler.send_message(
                         update, context,
-                        "💰 <b>ثبت درآمد</b>\n\n❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
+                        "💰 <b>ثبت درآمد</b>\n\n"
+                        "❌ هیچ پروژه‌ای ثبت نشده است.\n\n"
                         "لطفاً ابتدا یک پروژه ثبت کنید.",
                         reply_markup=get_main_keyboard(),
                         parse_mode='HTML'
@@ -73,7 +126,11 @@ class PaymentHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            project_id = context.user_data['current_project_id']
+            project_id = context.user_data.get('current_project_id')
+            if not project_id:
+                await BaseHandler.send_message(update, context, "❌ پروژه‌ای انتخاب نشده است")
+                return
+            
             payments = PaymentService.get_by_project(db, project_id)
             project = ProjectService.get_by_id(db, project_id)
             
