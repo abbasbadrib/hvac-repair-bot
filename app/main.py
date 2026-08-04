@@ -152,6 +152,7 @@ def setup_handlers(application: Application):
             CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
         ],
         states={
+            # ثبت هزینه جدید
             ExpenseHandler.EXPENSE_TYPE: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_"),
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^gen_exp_type_")
@@ -165,9 +166,11 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_description)
             ],
+            # ویرایش مبلغ هزینه
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
+            # ویرایش توضیحات هزینه
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
@@ -176,7 +179,8 @@ def setup_handlers(application: Application):
             CommandHandler("cancel", ExpenseHandler.cancel),
             CallbackQueryHandler(ExpenseHandler.cancel, pattern="^cancel_expense$")
         ],
-        allow_reentry=True
+        allow_reentry=True,
+        per_message=True
     )
     application.add_handler(expense_conv)
     
