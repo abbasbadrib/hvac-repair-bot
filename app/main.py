@@ -223,6 +223,27 @@ def setup_handlers(application: Application):
     )
     application.add_handler(referral_conv)
     
+    # Settings Conversation
+    settings_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(SettingsHandler.edit_my_name, pattern="^edit_my_name$"),
+            CallbackQueryHandler(SettingsHandler.edit_partner_name, pattern="^edit_partner_name$")
+        ],
+        states={
+            SettingsHandler.EDIT_MY_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_my_name)
+            ],
+            SettingsHandler.EDIT_PARTNER_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_partner_name)
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", SettingsHandler.cancel)
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(settings_conv)
+    
     # ============ MAIN MENU HANDLERS ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
@@ -307,6 +328,9 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_settings, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.backup_database, pattern="^backup_db$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.reset_database, pattern="^reset_db$"))
+    application.add_handler(CallbackQueryHandler(SettingsHandler.confirm_reset, pattern="^confirm_reset$"))
+    application.add_handler(CallbackQueryHandler(SettingsHandler.cancel_reset, pattern="^cancel_reset$"))
+    application.add_handler(CallbackQueryHandler(SettingsHandler.show_error_logs, pattern="^error_logs$"))
     
     # ============ FREE TEXT HANDLER (آخرین اولویت) ============
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
@@ -346,25 +370,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# اضافه کردن به بخش Settings callbacks:
-
-    # Settings Conversation Handler
-    settings_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(SettingsHandler.edit_my_name, pattern="^edit_my_name$"),
-            CallbackQueryHandler(SettingsHandler.edit_partner_name, pattern="^edit_partner_name$")
-        ],
-        states={
-            SettingsHandler.EDIT_MY_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_my_name)
-            ],
-            SettingsHandler.EDIT_PARTNER_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, SettingsHandler.save_partner_name)
-            ],
-        },
-        fallbacks=[
-            CommandHandler("cancel", SettingsHandler.cancel)
-        ],
-        allow_reentry=True
-    )
-    application.add_handler(settings_conv)
