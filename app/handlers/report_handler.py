@@ -94,11 +94,9 @@ class ReportHandler(BaseHandler):
             
             period_names = {"all": "همه", "weekly": "هفتگی", "monthly": "ماهانه", "yearly": "سالانه"}
             
-            # Get general expenses
             general_expenses = ExpenseService.get_general_expenses(db)
             total_general_expenses = sum(e.amount for e in general_expenses if e.created_at.date() >= start_date)
             
-            # Get general expenses by type
             general_by_type = {}
             for exp in general_expenses:
                 if exp.created_at.date() >= start_date:
@@ -113,7 +111,6 @@ class ReportHandler(BaseHandler):
                 await BaseHandler.edit_message(update, context, text, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
                 return
             
-            # Calculate totals
             total_projects = len(filtered_projects)
             completed_projects = [p for p in filtered_projects if p.status == ProjectStatus.COMPLETED]
             total_completed = len(completed_projects)
@@ -153,7 +150,6 @@ class ReportHandler(BaseHandler):
                 total_parts_profit += financials.total_parts_profit
                 total_labor += financials.labor_cost
                 
-                # Expenses by payer
                 for exp in expenses:
                     if not exp.is_general:
                         total_expenses_by_payer[exp.paid_by.value] = total_expenses_by_payer.get(exp.paid_by.value, 0) + exp.amount
@@ -174,14 +170,12 @@ class ReportHandler(BaseHandler):
                 f"   جمع کل هزینه‌ها: {total_project_expenses + total_general_expenses:,.0f} تومان\n\n"
             )
             
-            # Show expenses by type
             if total_expenses_by_type:
                 text += "📋 <b>تفکیک هزینه‌ها بر اساس نوع</b>:\n"
                 for exp_type, amount in sorted(total_expenses_by_type.items(), key=lambda x: -x[1]):
                     text += f"   {exp_type}: {amount:,.0f} تومان\n"
                 text += "\n"
             
-            # Show expenses by payer
             if any(total_expenses_by_payer.values()):
                 text += "👤 <b>تفکیک هزینه‌ها بر اساس پرداخت‌کننده</b>:\n"
                 for payer, amount in total_expenses_by_payer.items():
@@ -189,7 +183,6 @@ class ReportHandler(BaseHandler):
                         text += f"   {payer}: {amount:,.0f} تومان\n"
                 text += "\n"
             
-            # Show general expenses by type
             if general_by_type:
                 text += "💳 <b>تفکیک هزینه‌های عمومی</b>:\n"
                 for exp_type, amount in sorted(general_by_type.items(), key=lambda x: -x[1]):
@@ -330,7 +323,6 @@ class ReportHandler(BaseHandler):
         
         db = BaseHandler.get_db()
         try:
-            # Get all expenses
             all_expenses = db.query(ExpenseService.model).all()
             
             if not all_expenses:
@@ -346,7 +338,6 @@ class ReportHandler(BaseHandler):
             
             text = "💳 <b>گزارش هزینه</b>\n\n"
             
-            # Project expenses
             project_expenses = [e for e in all_expenses if not e.is_general]
             general_expenses = [e for e in all_expenses if e.is_general]
             

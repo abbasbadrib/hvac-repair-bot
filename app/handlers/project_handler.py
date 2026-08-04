@@ -1,5 +1,5 @@
 """
-Project management handlers.
+Project management handlers with full edit capabilities.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Conversation states
 PROJECT_CUSTOMER, PROJECT_TYPE, PROJECT_SERVICE, PROJECT_DESCRIPTION, PROJECT_LABOR, PROJECT_ASK_PART = range(6)
+EDIT_PROJECT_AMOUNT, EDIT_PROJECT_TYPE, EDIT_PROJECT_SERVICE, EDIT_PROJECT_DESCRIPTION = range(10, 14)
 
 class ProjectHandler(BaseHandler):
     """Handler for project operations."""
@@ -32,6 +33,10 @@ class ProjectHandler(BaseHandler):
     PROJECT_DESCRIPTION = PROJECT_DESCRIPTION
     PROJECT_LABOR = PROJECT_LABOR
     PROJECT_ASK_PART = PROJECT_ASK_PART
+    EDIT_PROJECT_AMOUNT = EDIT_PROJECT_AMOUNT
+    EDIT_PROJECT_TYPE = EDIT_PROJECT_TYPE
+    EDIT_PROJECT_SERVICE = EDIT_PROJECT_SERVICE
+    EDIT_PROJECT_DESCRIPTION = EDIT_PROJECT_DESCRIPTION
     
     @staticmethod
     async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,7 +83,7 @@ class ProjectHandler(BaseHandler):
     
     @staticmethod
     async def view_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """View project details."""
+        """View project details with edit options."""
         query = update.callback_query
         await query.answer()
         
@@ -123,7 +128,7 @@ class ProjectHandler(BaseHandler):
                 f"💳 <b>هزینه‌ها</b>: {financials.total_expenses:,.0f} تومان\n"
                 f"📊 <b>سود ناخالص</b>: {financials.gross_profit:,.0f} تومان\n"
                 f"🤝 <b>حق معرفی</b>: {financials.referral_amount:,.0f} تومان ({financials.referral_percentage}%)\n"
-                f"💰 <b>سود خالص</b>: {financials.net_profit:,.0f} تومان\n"
+                f"💰 <b>سود خالص</b>: {financials.net_profit:,.0f} تومан\n"
                 f"👤 <b>سهم من</b>: {financials.my_share:,.0f} تومان\n"
                 f"👥 <b>سهم شریک</b>: {financials.partner_share:,.0f} تومان\n"
                 f"💳 <b>طلب من</b>: {financials.my_debt:,.0f} تومان\n"
@@ -133,7 +138,7 @@ class ProjectHandler(BaseHandler):
             
             keyboard = [
                 [
-                    InlineKeyboardButton("✏️ ویرایش", callback_data=f"edit_project_{project_id}"),
+                    InlineKeyboardButton("✏️ ویرایش کامل", callback_data=f"edit_full_project_{project_id}"),
                     InlineKeyboardButton("🗑 حذف", callback_data=f"delete_project_{project_id}")
                 ],
                 [
@@ -159,6 +164,253 @@ class ProjectHandler(BaseHandler):
             )
         finally:
             db.close()
+    
+    @staticmethod
+    async def edit_full_project_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start full project editing."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[3])
+        context.user_data['edit_project_id'] = project_id
+        
+        await query.answer()
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💰 ویرایش مبلغ کل", callback_data="edit_project_amount")],
+            [InlineKeyboardButton("❄️ ویرایش نوع دستگاه", callback_data="edit_project_type")],
+            [InlineKeyboardButton("🛠 ویرایش نوع سرویس", callback_data="edit_project_service")],
+            [InlineKeyboardButton("📝 ویرایش توضیحات", callback_data="edit_project_desc")],
+            [InlineKeyboardButton("🔙 انصراف", callback_data="view_project_" + str(project_id))]
+        ])
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "✏️ <b>ویرایش کامل پروژه</b>\n\n"
+            "لطفاً بخش مورد نظر برای ویرایش را انتخاب کنید:",
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+        return EDIT_PROJECT_AMOUNT
+    
+    @staticmethod
+    async def edit_project_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit project amount."""
+        query = update.callback_query
+        await query.answer()
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "💰 <b>ویرایش مبلغ کل</b>\n\n"
+            "مبلغ جدید را وارد کنید (تومان):",
+            parse_mode='HTML'
+        )
+        return EDIT_PROJECT_AMOUNT
+    
+    @staticmethod
+    async def edit_project_amount_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new project amount."""
+        try:
+            new_amount = float(update.message.text.replace(',', '').strip())
+            if new_amount < 0:
+                raise ValueError("Amount must be positive")
+        except ValueError:
+            await BaseHandler.send_message(
+                update, context,
+                "❌ مبلغ نامعتبر است. لطفاً یک عدد مثبت وارد کنید.",
+                parse_mode='HTML'
+            )
+            return EDIT_PROJECT_AMOUNT
+        
+        db = BaseHandler.get_db()
+        try:
+            project_id = context.user_data['edit_project_id']
+            project = ProjectService.update(db, project_id, labor_cost=new_amount)
+            
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>مبلغ پروژه با موفقیت ویرایش شد!</b>\n\n"
+                    f"💰 مبلغ جدید: {project.labor_cost:,.0f} تومان",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project_id}")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} amount updated to {new_amount}")
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error updating project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_project_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit project type."""
+        query = update.callback_query
+        await query.answer()
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❄️ کولرگازی", callback_data="edit_type_air")],
+            [InlineKeyboardButton("🔥 پکیج", callback_data="edit_type_package")],
+            [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_edit")]
+        ])
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "❄️ <b>ویرایش نوع دستگاه</b>\n\n"
+            "نوع جدید را انتخاب کنید:",
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+        return EDIT_PROJECT_TYPE
+    
+    @staticmethod
+    async def edit_project_type_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new project type."""
+        query = update.callback_query
+        await query.answer()
+        
+        project_type = ProjectType.AIR_CONDITIONER if query.data == 'edit_type_air' else ProjectType.PACKAGE
+        
+        db = BaseHandler.get_db()
+        try:
+            project_id = context.user_data['edit_project_id']
+            project = ProjectService.update(db, project_id, project_type=project_type)
+            
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>نوع دستگاه با موفقیت ویرایش شد!</b>\n\n"
+                    f"❄️ نوع جدید: {project.project_type.value}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project_id}")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} type updated to {project_type.value}")
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error updating project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_project_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit project service type."""
+        query = update.callback_query
+        await query.answer()
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛠 نصب", callback_data="edit_service_install")],
+            [InlineKeyboardButton("🔧 تعمیر", callback_data="edit_service_repair")],
+            [InlineKeyboardButton("👀 بازدید", callback_data="edit_service_visit")],
+            [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_edit")]
+        ])
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "🛠 <b>ویرایش نوع سرویس</b>\n\n"
+            "نوع سرویس جدید را انتخاب کنید:",
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+        return EDIT_PROJECT_SERVICE
+    
+    @staticmethod
+    async def edit_project_service_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new service type."""
+        query = update.callback_query
+        await query.answer()
+        
+        service_map = {
+            'install': 'نصب',
+            'repair': 'تعمیر',
+            'visit': 'بازدید'
+        }
+        service_type = service_map.get(query.data.split('_')[2], 'تعمیر')
+        
+        db = BaseHandler.get_db()
+        try:
+            project_id = context.user_data['edit_project_id']
+            project = ProjectService.update(db, project_id, service_type=service_type)
+            
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>نوع سرویس با موفقیت ویرایش شد!</b>\n\n"
+                    f"🛠 سرویس جدید: {project.service_type}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project_id}")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} service updated to {service_type}")
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error updating project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_project_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit project description."""
+        query = update.callback_query
+        await query.answer()
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "📝 <b>ویرایش توضیحات</b>\n\n"
+            "توضیحات جدید را وارد کنید:\n"
+            "(برای انصراف /cancel را بفرستید)",
+            parse_mode='HTML'
+        )
+        return EDIT_PROJECT_DESCRIPTION
+    
+    @staticmethod
+    async def edit_project_description_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new description."""
+        new_description = update.message.text.strip()
+        
+        db = BaseHandler.get_db()
+        try:
+            project_id = context.user_data['edit_project_id']
+            project = ProjectService.update(db, project_id, description=new_description)
+            
+            if project:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>توضیحات با موفقیت ویرایش شد!</b>\n\n"
+                    f"📝 توضیحات جدید: {project.description}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📊 مشاهده پروژه", callback_data=f"view_project_{project_id}")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Project {project_id} description updated")
+            else:
+                await BaseHandler.send_message(update, context, "❌ پروژه یافت نشد")
+        except Exception as e:
+            logger.error(f"Error updating project: {e}")
+            await BaseHandler.send_message(update, context, f"❌ خطا: {str(e)}")
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
     
     @staticmethod
     async def delete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -190,23 +442,6 @@ class ProjectHandler(BaseHandler):
                 await query.answer("❌ خطا در حذف پروژه", True)
         finally:
             db.close()
-    
-    @staticmethod
-    async def edit_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start editing project."""
-        query = update.callback_query
-        project_id = int(query.data.split('_')[2])
-        context.user_data['edit_project_id'] = project_id
-        
-        await query.answer()
-        await BaseHandler.edit_message(
-            update, context,
-            "✏️ <b>ویرایش پروژه</b>\n\n"
-            "لطفاً <b>توضیحات</b> جدید پروژه را وارد کنید:\n"
-            "(برای انصراف /cancel را بفرستید)",
-            parse_mode='HTML'
-        )
-        return 10  # EDIT_PROJECT_DESCRIPTION
     
     @staticmethod
     async def complete_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -413,17 +648,15 @@ class ProjectHandler(BaseHandler):
         await query.answer()
         
         if query.data == "part_yes":
-            # Save project first
             project_id = await ProjectHandler.save_project(update, context)
             if project_id:
                 context.user_data['part_project_id'] = project_id
-                # Start part registration immediately
                 await BaseHandler.send_message(
                     update, context,
                     "🔩 <b>ثبت قطعه جدید</b>\n\nلطفاً <b>نام قطعه</b> را وارد کنید:",
                     parse_mode='HTML'
                 )
-                return 20  # PART_NAME state
+                return 20
         else:
             await ProjectHandler.save_project(update, context)
             return ConversationHandler.END

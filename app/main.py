@@ -147,7 +147,11 @@ def setup_handlers(application: Application):
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
-            CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
+            CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$"),
+            CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_expense_"),
+            CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_expense_"),
+            CallbackQueryHandler(ExpenseHandler.edit_expense_amount, pattern="^edit_exp_amount$"),
+            CallbackQueryHandler(ExpenseHandler.edit_expense_description, pattern="^edit_exp_desc$")
         ],
         states={
             ExpenseHandler.EXPENSE_TYPE: [
@@ -162,6 +166,12 @@ def setup_handlers(application: Application):
             ],
             ExpenseHandler.EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.add_expense_description)
+            ],
+            ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
+            ],
+            ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
         },
         fallbacks=[
@@ -217,7 +227,7 @@ def setup_handlers(application: Application):
     )
     application.add_handler(referral_conv)
     
-    # ============ MAIN MENU HANDLERS (دکمه‌های منو) ============
+    # ============ MAIN MENU HANDLERS ============
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
@@ -229,7 +239,7 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
     
-    # ============ REMINDER (بدون Conversation) ============
+    # ============ REMINDER ============
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^reminder_menu$"))
     application.add_handler(CallbackQueryHandler(ReminderHandler.show_settlement_reminders, pattern="^reminder_settlement$"))
@@ -253,13 +263,23 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(ProjectHandler.complete_project, pattern="^complete_project_"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.cancel_project, pattern="^cancel_project_"))
     application.add_handler(CallbackQueryHandler(ProjectHandler.delete_project, pattern="^delete_project_"))
-    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project, pattern="^edit_project_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_full_project_start, pattern="^edit_full_project_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_amount, pattern="^edit_project_amount$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_type, pattern="^edit_project_type$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_service, pattern="^edit_project_service$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_description, pattern="^edit_project_desc$"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_type_save, pattern="^edit_type_"))
+    application.add_handler(CallbackQueryHandler(ProjectHandler.edit_project_service_save, pattern="^edit_service_"))
     
     # Part
     application.add_handler(CallbackQueryHandler(PartHandler.show_parts, pattern="^parts_"))
     
     # Expense
     application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^expenses_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_expense_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_expense_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_amount, pattern="^edit_exp_amount$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_description, pattern="^edit_exp_desc$"))
     
     # Payment
     application.add_handler(CallbackQueryHandler(PaymentHandler.show_payments, pattern="^payments_"))

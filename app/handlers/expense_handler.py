@@ -1,5 +1,5 @@
 """
-Expense management handlers.
+Expense management handlers with edit and delete.
 """
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Conversation states
 EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_PAID_BY, EXPENSE_DESCRIPTION, EXPENSE_GENERAL = range(5)
+EDIT_EXPENSE_AMOUNT, EDIT_EXPENSE_DESCRIPTION = range(5, 7)
 
 class ExpenseHandler(BaseHandler):
     """Handler for expense operations."""
@@ -25,10 +26,12 @@ class ExpenseHandler(BaseHandler):
     EXPENSE_PAID_BY = EXPENSE_PAID_BY
     EXPENSE_DESCRIPTION = EXPENSE_DESCRIPTION
     EXPENSE_GENERAL = EXPENSE_GENERAL
+    EDIT_EXPENSE_AMOUNT = EDIT_EXPENSE_AMOUNT
+    EDIT_EXPENSE_DESCRIPTION = EDIT_EXPENSE_DESCRIPTION
     
     @staticmethod
     async def show_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show expenses for a project."""
+        """Show expenses for a project with edit/delete options."""
         if update.callback_query:
             query = update.callback_query
             project_id = int(query.data.split('_')[1])
@@ -102,7 +105,10 @@ class ExpenseHandler(BaseHandler):
             for i, expense in enumerate(expenses, 1):
                 paid_by_emoji = "👤" if expense.paid_by == PaidBy.ME else "👥" if expense.paid_by == PaidBy.PARTNER else "🤝"
                 general_label = " (عمومی)" if expense.is_general else ""
-                text += f"{i}. {expense.expense_type.value}{general_label}\n   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n\n"
+                text += f"{i}. {expense.expense_type.value}{general_label}\n"
+                text += f"   💰 {expense.amount:,.0f} تومان | {paid_by_emoji} {expense.paid_by.value}\n"
+                text += f"   📝 {expense.description or 'بدون توضیح'}\n"
+                text += f"   🆔 {expense.id}\n\n"
                 total_expenses += expense.amount
                 if expense.is_general:
                     general_expenses += expense.amount
@@ -119,11 +125,15 @@ class ExpenseHandler(BaseHandler):
             text += f"👤 <b>پرداخت شده توسط من</b>: {me_expenses:,.0f} تومان\n"
             text += f"👥 <b>پرداخت شده توسط شریک</b>: {partner_expenses:,.0f} تومان\n"
             if joint_expenses > 0:
-                text += f"🤝 <b>پرداخت شده به صورت مشترک</b>: {joint_expenses:,.0f} تومان"
+                text += f"🤝 <b>پرداخت شده به صورت مشترک</b>: {joint_expenses:,.0f} تومان\n\n"
+            
+            text += "🆔 برای ویرایش یا حذف، شناسه هزینه را وارد کنید."
             
             keyboard = [
                 [InlineKeyboardButton("➕ ثبت هزینه جدید", callback_data=f"add_expense_{project_id}")],
                 [InlineKeyboardButton("➕ هزینه عمومی", callback_data="add_general_expense")],
+                [InlineKeyboardButton("✏️ ویرایش هزینه", callback_data=f"edit_expense_{project_id}")],
+                [InlineKeyboardButton("🗑 حذف هزینه", callback_data=f"delete_expense_{project_id}")],
                 [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id}")]
             ]
             
@@ -132,8 +142,278 @@ class ExpenseHandler(BaseHandler):
             db.close()
     
     @staticmethod
+    async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete an expense."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        context.user_data['delete_project_id'] = project_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            f"🗑 <b>حذف هزینه</b>\n\n"
+            f"شناسه هزینه مورد نظر برای حذف را وارد کنید:\n"
+            f"(از لیست هزینه‌ها، عدد کنار 🆔 را وارد کنید)\n\n"
+            f"برای انصراف /cancel را بفرستید.",
+            parse_mode='HTML'
+        )
+        return 10
+    
+    @staticmethod
+    async def delete_expense_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm delete expense."""
+        try:
+            expense_id = int(update.message.text.strip())
+        except ValueError:
+            await BaseHandler.send_message(
+                update, context,
+                "❌ شناسه نامعتبر است. لطفاً یک عدد وارد کنید.",
+                parse_mode='HTML'
+            )
+            return 10
+        
+        db = BaseHandler.get_db()
+        try:
+            expense = ExpenseService.get_by_id(db, expense_id)
+            if not expense:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
+                return 10
+            
+            project_id = expense.project_id or context.user_data.get('delete_project_id')
+            
+            if ExpenseService.delete(db, expense_id):
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>هزینه با موفقیت حذف شد!</b>\n\n"
+                    f"🆔 شناسه: {expense_id}\n"
+                    f"💳 نوع: {expense.expense_type.value}\n"
+                    f"💰 مبلغ: {expense.amount:,.0f} تومان",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 بازگشت به هزینه‌ها", callback_data=f"expenses_{project_id if project_id else 0}")],
+                        [InlineKeyboardButton("🔙 بازگشت به پروژه", callback_data=f"view_project_{project_id if project_id else 0}")]
+                    ]),
+                    parse_mode='HTML'
+                )
+                logger.info(f"Expense {expense_id} deleted")
+            else:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ خطا در حذف هزینه.",
+                    parse_mode='HTML'
+                )
+        except Exception as e:
+            logger.error(f"Error deleting expense: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا: {str(e)}",
+                parse_mode='HTML'
+            )
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start editing an expense."""
+        query = update.callback_query
+        project_id = int(query.data.split('_')[2])
+        context.user_data['edit_project_id'] = project_id
+        
+        await query.answer()
+        await BaseHandler.edit_message(
+            update, context,
+            f"✏️ <b>ویرایش هزینه</b>\n\n"
+            f"شناسه هزینه مورد نظر برای ویرایش را وارد کنید:\n"
+            f"(از لیست هزینه‌ها، عدد کنار 🆔 را وارد کنید)\n\n"
+            f"برای انصراف /cancel را بفرستید.",
+            parse_mode='HTML'
+        )
+        return 11
+    
+    @staticmethod
+    async def edit_expense_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Select expense to edit."""
+        try:
+            expense_id = int(update.message.text.strip())
+        except ValueError:
+            await BaseHandler.send_message(
+                update, context,
+                "❌ شناسه نامعتبر است. لطفاً یک عدد وارد کنید.",
+                parse_mode='HTML'
+            )
+            return 11
+        
+        db = BaseHandler.get_db()
+        try:
+            expense = ExpenseService.get_by_id(db, expense_id)
+            if not expense:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
+                return 11
+            
+            context.user_data['edit_expense_id'] = expense_id
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💰 ویرایش مبلغ", callback_data="edit_exp_amount")],
+                [InlineKeyboardButton("📝 ویرایش توضیحات", callback_data="edit_exp_desc")],
+                [InlineKeyboardButton("🔙 انصراف", callback_data="cancel_edit")]
+            ])
+            
+            await BaseHandler.send_message(
+                update, context,
+                f"✏️ <b>ویرایش هزینه</b>\n\n"
+                f"🆔 شناسه: {expense_id}\n"
+                f"💳 نوع: {expense.expense_type.value}\n"
+                f"💰 مبلغ فعلی: {expense.amount:,.0f} تومان\n"
+                f"📝 توضیحات فعلی: {expense.description or 'بدون توضیح'}\n\n"
+                f"لطفاً بخش مورد نظر برای ویرایش را انتخاب کنید:",
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            return 12
+            
+        except Exception as e:
+            logger.error(f"Error selecting expense: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا: {str(e)}",
+                parse_mode='HTML'
+            )
+            return 11
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def edit_expense_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit expense amount."""
+        query = update.callback_query
+        await query.answer()
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
+            "مبلغ جدید را وارد کنید (تومان):",
+            parse_mode='HTML'
+        )
+        return 13
+    
+    @staticmethod
+    async def edit_expense_amount_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new expense amount."""
+        try:
+            new_amount = float(update.message.text.replace(',', '').strip())
+            if new_amount <= 0:
+                raise ValueError("Amount must be positive")
+        except ValueError:
+            await BaseHandler.send_message(
+                update, context,
+                "❌ مبلغ نامعتبر است. لطفاً یک عدد مثبت وارد کنید.",
+                parse_mode='HTML'
+            )
+            return 13
+        
+        db = BaseHandler.get_db()
+        try:
+            expense_id = context.user_data['edit_expense_id']
+            expense = ExpenseService.update(db, expense_id, amount=new_amount)
+            
+            if expense:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>مبلغ هزینه با موفقیت ویرایش شد!</b>\n\n"
+                    f"🆔 شناسه: {expense.id}\n"
+                    f"💳 نوع: {expense.expense_type.value}\n"
+                    f"💰 مبلغ جدید: {expense.amount:,.0f} تومان",
+                    parse_mode='HTML'
+                )
+                logger.info(f"Expense {expense_id} amount updated to {new_amount}")
+            else:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
+        except Exception as e:
+            logger.error(f"Error updating expense: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا: {str(e)}",
+                parse_mode='HTML'
+            )
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def edit_expense_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edit expense description."""
+        query = update.callback_query
+        await query.answer()
+        
+        await BaseHandler.edit_message(
+            update, context,
+            "📝 <b>ویرایش توضیحات هزینه</b>\n\n"
+            "توضیحات جدید را وارد کنید:\n"
+            "(برای رد کردن '.' را وارد کنید)",
+            parse_mode='HTML'
+        )
+        return 14
+    
+    @staticmethod
+    async def edit_expense_description_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save new expense description."""
+        new_description = update.message.text.strip()
+        if new_description == '.':
+            new_description = None
+        
+        db = BaseHandler.get_db()
+        try:
+            expense_id = context.user_data['edit_expense_id']
+            expense = ExpenseService.update(db, expense_id, description=new_description)
+            
+            if expense:
+                await BaseHandler.send_message(
+                    update, context,
+                    f"✅ <b>توضیحات هزینه با موفقیت ویرایش شد!</b>\n\n"
+                    f"🆔 شناسه: {expense.id}\n"
+                    f"💳 نوع: {expense.expense_type.value}\n"
+                    f"📝 توضیحات جدید: {expense.description or 'ثبت نشده'}",
+                    parse_mode='HTML'
+                )
+                logger.info(f"Expense {expense_id} description updated")
+            else:
+                await BaseHandler.send_message(
+                    update, context,
+                    "❌ هزینه‌ای با این شناسه یافت نشد.",
+                    parse_mode='HTML'
+                )
+        except Exception as e:
+            logger.error(f"Error updating expense: {e}")
+            await BaseHandler.send_message(
+                update, context,
+                f"❌ خطا: {str(e)}",
+                parse_mode='HTML'
+            )
+        finally:
+            db.close()
+        
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    @staticmethod
     async def add_general_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """شروع ثبت هزینه عمومی."""
+        """Start adding a general expense."""
         query = update.callback_query
         await query.answer()
         
@@ -293,6 +573,7 @@ class ExpenseHandler(BaseHandler):
             
             text = (
                 f"✅ <b>هزینه با موفقیت ثبت شد!</b>\n\n"
+                f"🆔 شناسه: {expense.id}\n"
                 f"💳 نوع: {expense.expense_type.value}\n"
                 f"💰 مبلغ: {expense.amount:,.0f} تومان\n"
                 f"👤 پرداخت کننده: {expense.paid_by.value}\n"
