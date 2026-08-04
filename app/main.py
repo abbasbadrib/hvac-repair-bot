@@ -29,6 +29,7 @@ from app.handlers.dashboard_handler import DashboardHandler
 from app.handlers.settings_handler import SettingsHandler
 from app.handlers.partner_handler import PartnerHandler
 from app.handlers.free_text_handler import FreeTextHandler
+from app.handlers.diagnose_handler import DiagnoseHandler
 from app.web_server import start_health_server
 
 logger = setup_logger()
@@ -51,6 +52,7 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("cancel", StartHandler.cancel))
     application.add_handler(CommandHandler("menu", StartHandler.start))
     application.add_handler(CommandHandler("stats", ReportHandler.show_statistics))
+    application.add_handler(CommandHandler("diagnose", DiagnoseHandler.diagnose))
     
     # ============ CONVERSATION HANDLERS ============
     
@@ -267,6 +269,7 @@ def setup_handlers(application: Application):
     
     # ============ CALLBACK HANDLERS ============
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^back_home$"))
+    application.add_handler(CallbackQueryHandler(DiagnoseHandler.run_diagnose, pattern="^run_diagnose$"))
     
     # Customer
     application.add_handler(CallbackQueryHandler(CustomerHandler.view_customer, pattern="^view_customer_"))

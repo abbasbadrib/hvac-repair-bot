@@ -52,7 +52,6 @@ class ExpenseHandler(BaseHandler):
             if data == "back_to_expenses" or data == "back_to_expense_menu":
                 await query.answer()
                 context.user_data.pop('current_project_id', None)
-                # فراخوانی مجدد برای نمایش منوی اصلی
                 await ExpenseHandler.show_expenses(update, context)
                 return
             
@@ -68,7 +67,6 @@ class ExpenseHandler(BaseHandler):
                     await query.answer("❌ خطا در شناسایی پروژه", show_alert=True)
                     return
             else:
-                # اگر داده ناشناخته است
                 await query.answer()
                 return
         else:
@@ -296,7 +294,7 @@ class ExpenseHandler(BaseHandler):
         context.user_data['edit_expense_id'] = expense_id
         await query.answer()
         
-        await BaseHandler.edit_message(
+        await BaseHandler.send_message(
             update, context,
             "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
             "مبلغ جدید را وارد کنید (تومان):\n"
@@ -363,7 +361,7 @@ class ExpenseHandler(BaseHandler):
         context.user_data['edit_expense_id'] = expense_id
         await query.answer()
         
-        await BaseHandler.edit_message(
+        await BaseHandler.send_message(
             update, context,
             "📝 <b>ویرایش توضیحات هزینه</b>\n\n"
             "توضیحات جدید را وارد کنید:\n"
