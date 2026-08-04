@@ -11,7 +11,6 @@ from app.models.expense import ExpenseType, PaidBy
 from app.models.project import ProjectStatus
 from app.keyboards.main_keyboard import get_main_keyboard
 import logging
-import re
 import traceback
 
 logger = logging.getLogger(__name__)
@@ -360,7 +359,6 @@ class ExpenseHandler(BaseHandler):
             text = update.message.text.strip()
             logger.info(f"🔍 edit_expense_amount_save - text: '{text}'")
             
-            # بررسی اینکه کاربر /cancel را زده است
             if text.lower() == '/cancel':
                 logger.info("🔍 edit_expense_amount_save - user cancelled")
                 await BaseHandler.send_message(
@@ -374,7 +372,6 @@ class ExpenseHandler(BaseHandler):
                 context.user_data.clear()
                 return ConversationHandler.END
             
-            # حذف کاما و تبدیل به عدد
             try:
                 new_amount = float(text.replace(',', '').strip())
                 logger.info(f"🔍 edit_expense_amount_save - parsed amount: {new_amount}")
@@ -814,9 +811,7 @@ class ExpenseHandler(BaseHandler):
             parse_mode='HTML'
         )
         return EXPENSE_PAID_BY
-        except Exception as e:
-            logger.error(f"❌ add_expense_amount error: {e}")
-            logger.error(traceback.format_exc())
+        # try-except برای این متد در پایین بسته شده است
     
     @staticmethod
     async def add_expense_paid_by(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -901,3 +896,4 @@ class ExpenseHandler(BaseHandler):
         except Exception as e:
             logger.error(f"❌ add_expense_paid_by - unexpected error: {e}")
             logger.error(traceback.format_exc())
+            return ConversationHandler.END
