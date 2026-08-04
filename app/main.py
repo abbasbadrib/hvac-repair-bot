@@ -179,8 +179,7 @@ def setup_handlers(application: Application):
             CommandHandler("cancel", ExpenseHandler.cancel),
             CallbackQueryHandler(ExpenseHandler.cancel, pattern="^cancel_expense$")
         ],
-        allow_reentry=True,
-        per_message=True
+        allow_reentry=True
     )
     application.add_handler(expense_conv)
     
@@ -251,6 +250,7 @@ def setup_handlers(application: Application):
     application.add_handler(settings_conv)
     
     # ============ MAIN MENU HANDLERS ============
+    # این Handlerها باید قبل از FreeTextHandler بیایند
     application.add_handler(MessageHandler(filters.Regex("^🏠 خانه$"), DashboardHandler.back_home))
     application.add_handler(MessageHandler(filters.Regex("^👤 مشتری‌ها$"), CustomerHandler.show_customers))
     application.add_handler(MessageHandler(filters.Regex("^🛠 پروژه‌ها$"), ProjectHandler.show_projects))
@@ -261,15 +261,10 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.Regex("^🤝 حق معرفی$"), ReferralHandler.show_referral))
     application.add_handler(MessageHandler(filters.Regex("^📊 گزارش$"), ReportHandler.show_report_menu))
     application.add_handler(MessageHandler(filters.Regex("^⚙ تنظیمات$"), SettingsHandler.show_settings))
-    
-    # ============ REMINDER ============
     application.add_handler(MessageHandler(filters.Regex("^⏰ یادآوری$"), ReminderHandler.show_reminders))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_reminders, pattern="^reminder_menu$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_settlement_reminders, pattern="^reminder_settlement$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_followup_reminders, pattern="^reminder_followup$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.show_all_projects, pattern="^reminder_all$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.set_reminder_time, pattern="^reminder_settime$"))
-    application.add_handler(CallbackQueryHandler(ReminderHandler.back_to_menu, pattern="^reminder_back$"))
+    
+    # ============ FREE TEXT HANDLER (آخرین اولویت) ============
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     # ============ CALLBACK HANDLERS ============
     application.add_handler(CallbackQueryHandler(DashboardHandler.back_home, pattern="^back_home$"))
@@ -338,9 +333,6 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(SettingsHandler.confirm_reset, pattern="^confirm_reset$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.cancel_reset, pattern="^cancel_reset$"))
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_error_logs, pattern="^error_logs$"))
-    
-    # ============ FREE TEXT HANDLER (آخرین اولویت) ============
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     logger.info("✅ All handlers registered successfully")
 
