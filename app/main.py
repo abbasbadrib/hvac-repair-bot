@@ -347,3 +347,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+# اضافه کردن به بخش Expense callbacks:
+
+    # General expenses management
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_general_expenses, pattern="^show_general_expenses$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.back_to_expenses, pattern="^back_to_expenses$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_general_expense$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_general_expense$"))
