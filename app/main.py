@@ -11,7 +11,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     filters,
-    ConversationHandler
+    ConversationHandler,
+    ContextTypes  # <-- این خط اضافه شد
 )
 from app.core.config import Config
 from app.core.database import Base, engine
