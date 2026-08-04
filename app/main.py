@@ -276,8 +276,12 @@ def setup_handlers(application: Application):
     
     # Expense
     application.add_handler(CallbackQueryHandler(ExpenseHandler.show_expenses, pattern="^expenses_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_general_expenses, pattern="^show_general_expenses$"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.back_to_expenses, pattern="^back_to_expenses$"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_expense_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_general_expense$"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_expense_"))
+    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_general_expense$"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_amount, pattern="^edit_exp_amount$"))
     application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_description, pattern="^edit_exp_desc$"))
     
@@ -347,10 +351,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# اضافه کردن به بخش Expense callbacks:
-
-    # General expenses management
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.show_general_expenses, pattern="^show_general_expenses$"))
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.back_to_expenses, pattern="^back_to_expenses$"))
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.delete_expense, pattern="^delete_general_expense$"))
-    application.add_handler(CallbackQueryHandler(ExpenseHandler.edit_expense_start, pattern="^edit_general_expense$"))
