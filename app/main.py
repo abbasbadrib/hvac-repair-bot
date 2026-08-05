@@ -180,8 +180,7 @@ def setup_handlers(application: Application):
             CommandHandler("cancel", ExpenseHandler.cancel),
             CallbackQueryHandler(ExpenseHandler.cancel, pattern="^cancel_expense$")
         ],
-        allow_reentry=True,
-        per_message=True
+        allow_reentry=True
     )
     application.add_handler(expense_conv)
     
