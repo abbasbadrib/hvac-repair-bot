@@ -282,7 +282,6 @@ class ExpenseHandler(BaseHandler):
             expense_id = int(query.data.split('_')[2])
             logger.info(f"🔍 expense_detail - expense_id: {expense_id}")
 
-            # پاسخ به query (فقط یک بار)
             await query.answer()
 
             db = BaseHandler.get_db()
@@ -338,14 +337,11 @@ class ExpenseHandler(BaseHandler):
             expense_id = int(query.data.split('_')[3])
             logger.info(f"🔍 edit_expense_amount - expense_id: {expense_id}")
 
-            # ذخیره شناسه در context
             context.user_data['edit_expense_id'] = expense_id
             logger.info(f"🔍 edit_expense_amount - saved edit_expense_id: {expense_id} in context")
 
-            # پاسخ به query (فقط یک بار)
             await query.answer()
 
-            # ارسال پیام برای دریافت مبلغ جدید
             await BaseHandler.send_message(
                 update, context,
                 "💰 <b>ویرایش مبلغ هزینه</b>\n\n"
@@ -370,7 +366,6 @@ class ExpenseHandler(BaseHandler):
             text = update.message.text.strip()
             logger.info(f"🔍 edit_expense_amount_save - received text: '{text}'")
 
-            # بررسی لغو
             if text.lower() == '/cancel':
                 logger.info("🔍 edit_expense_amount_save - user cancelled")
                 await BaseHandler.send_message(
@@ -384,7 +379,6 @@ class ExpenseHandler(BaseHandler):
                 context.user_data.clear()
                 return ConversationHandler.END
 
-            # تبدیل به عدد
             try:
                 new_amount = float(text.replace(',', '').strip())
                 logger.info(f"🔍 edit_expense_amount_save - parsed amount: {new_amount}")
@@ -400,7 +394,6 @@ class ExpenseHandler(BaseHandler):
                 )
                 return EDIT_EXPENSE_AMOUNT
 
-            # دریافت expense_id از context
             expense_id = context.user_data.get('edit_expense_id')
             logger.info(f"🔍 edit_expense_amount_save - expense_id from context: {expense_id}")
 
@@ -413,7 +406,6 @@ class ExpenseHandler(BaseHandler):
                 )
                 return ConversationHandler.END
 
-            # ذخیره در دیتابیس
             db = BaseHandler.get_db()
             try:
                 logger.info(f"🔍 edit_expense_amount_save - updating expense {expense_id} to {new_amount}")
@@ -436,6 +428,7 @@ class ExpenseHandler(BaseHandler):
                         parse_mode='HTML'
                     )
                     context.user_data.clear()
+                    logger.info("🔍 edit_expense_amount_save - Conversation END")
                     return ConversationHandler.END
                 else:
                     logger.error(f"❌ edit_expense_amount_save - expense {expense_id} not found")
