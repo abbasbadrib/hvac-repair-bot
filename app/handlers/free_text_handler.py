@@ -33,10 +33,11 @@ class FreeTextHandler(BaseHandler):
         """پردازش متن آزاد برای ثبت سریع پروژه."""
         text = update.message.text.strip()
         
-        # بررسی اینکه آیا کاربر در حال پاسخ به Conversation است
+        # اگر کاربر در Conversation است، پیام را به Handler بعدی ارسال کن
         if context.user_data and any(key in context.user_data for key in 
             ['edit_expense_id', 'expense_project_id', 'part_project_id', 'project_customer_id']):
-            logger.info(f"🔍 FreeTextHandler - Skipping, user in conversation: {list(context.user_data.keys())}")
+            logger.info(f"🔍 FreeTextHandler - User in conversation, passing through: {list(context.user_data.keys())}")
+            # return False یعنی پیام به Handler بعدی ارسال شود
             return False
         
         # بررسی الگوهای مستثنی
