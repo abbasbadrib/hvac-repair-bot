@@ -34,7 +34,6 @@ class FreeTextHandler(BaseHandler):
         text = update.message.text.strip()
         
         # بررسی اینکه آیا کاربر در حال پاسخ به Conversation است
-        # اگر context.user_data دارای کلیدهای خاص Conversation باشد، نادیده بگیر
         if context.user_data and any(key in context.user_data for key in 
             ['edit_expense_id', 'expense_project_id', 'part_project_id', 'project_customer_id']):
             logger.info(f"🔍 FreeTextHandler - Skipping, user in conversation: {list(context.user_data.keys())}")

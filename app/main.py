@@ -56,6 +56,7 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("diagnose", DiagnoseHandler.diagnose))
     
     # ============ CONVERSATION HANDLERS ============
+    # این Handlerها باید قبل از FreeTextHandler بیایند
     
     # Customer Conversation
     customer_conv = ConversationHandler(
@@ -146,7 +147,7 @@ def setup_handlers(application: Application):
     )
     application.add_handler(part_conv)
     
-    # ============ EXPENSE CONVERSATION (اصلاح شده با MessageHandler صحیح) ============
+    # ============ EXPENSE CONVERSATION ============
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
@@ -167,11 +168,11 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
             ],
-            # ===== ویرایش مبلغ هزینه - با MessageHandler صحیح =====
+            # ===== ویرایش مبلغ هزینه =====
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
-            # ===== ویرایش توضیحات هزینه - با MessageHandler صحیح =====
+            # ===== ویرایش توضیحات هزینه =====
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
@@ -348,6 +349,9 @@ def setup_handlers(application: Application):
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     logger.info("✅ All handlers registered successfully")
+    
+    # لاگ برای بررسی Stateها
+    logger.info(f"🔍 Expense states: {list(expense_conv.states.keys())}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors and notify user."""
