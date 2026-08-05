@@ -56,7 +56,7 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("diagnose", DiagnoseHandler.diagnose))
     
     # ============ CONVERSATION HANDLERS ============
-    # این Handlerها باید قبل از FreeTextHandler بیایند
+    # این Handlerها باید قبل از FreeTextHandler ثبت شوند
     
     # Customer Conversation
     customer_conv = ConversationHandler(
@@ -346,6 +346,7 @@ def setup_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(SettingsHandler.show_error_logs, pattern="^error_logs$"))
     
     # ============ FREE TEXT HANDLER (آخرین اولویت) ============
+    # این Handler باید آخرین باشد تا پیام‌های Conversation را Consume نکند
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, FreeTextHandler.handle_text))
     
     logger.info("✅ All handlers registered successfully")
