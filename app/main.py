@@ -56,7 +56,6 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("diagnose", DiagnoseHandler.diagnose))
     
     # ============ CONVERSATION HANDLERS ============
-    # این Handlerها باید قبل از FreeTextHandler بیایند
     
     # Customer Conversation
     customer_conv = ConversationHandler(
@@ -147,13 +146,14 @@ def setup_handlers(application: Application):
     )
     application.add_handler(part_conv)
     
-    # Expense Conversation
+    # ============ EXPENSE CONVERSATION (اصلاح شده) ============
     expense_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ExpenseHandler.add_expense_start, pattern="^add_expense_"),
             CallbackQueryHandler(ExpenseHandler.add_general_expense_start, pattern="^add_general_expense$")
         ],
         states={
+            # ثبت هزینه جدید
             ExpenseHandler.EXPENSE_TYPE: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^exp_type_"),
                 CallbackQueryHandler(ExpenseHandler.add_expense_type, pattern="^gen_exp_type_")
@@ -167,9 +167,11 @@ def setup_handlers(application: Application):
             ExpenseHandler.EXPENSE_PAID_BY: [
                 CallbackQueryHandler(ExpenseHandler.add_expense_paid_by, pattern="^exp_paid_")
             ],
+            # ===== ویرایش مبلغ هزینه =====
             ExpenseHandler.EDIT_EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_amount_save)
             ],
+            # ===== ویرایش توضیحات هزینه =====
             ExpenseHandler.EDIT_EXPENSE_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ExpenseHandler.edit_expense_description_save)
             ],
